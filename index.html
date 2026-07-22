@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Security: this site is fully static and self-contained. The CSP below blocks
+      all external scripts, styles, fonts, media and network requests. Keep it that
+      way — never add third-party scripts, CDNs, fonts or analytics.
+      style-src 'unsafe-inline' is required for React inline style attributes and
+      Vite dev-mode style injection; there is no external style origin to abuse.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <title>Music Trainer</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
