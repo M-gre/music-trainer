@@ -11,7 +11,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [x] Theory core: notes, intervals, scales, chords, diatonic triads, spelling, tunings for bass and guitar (`src/lib/theory/`)
 - [x] `src/lib/storage.ts`: typed localStorage wrapper (`mt:` prefix, JSON, versioned, safe on parse errors) with tests
 - [x] `Fretboard` SVG component: takes any `Tuning` (bass 4/5-string, guitar 6/7-string, drop tunings) & fret range, note dots with labels, click handler, highlight sets (e.g. scale tones vs root), responsive width
-- [ ] Shared instrument picker UI: instrument (bass/guitar) → string count → tuning, persisted as global default via storage lib, used by every fretboard tool
+- [x] Shared instrument picker UI: instrument (bass/guitar) → string count → tuning, persisted as global default via storage lib, used by every fretboard tool
 - [ ] `Keyboard` SVG component: configurable octave range, key highlighting with labels, click handler, responsive
 - [ ] Audio engine core (`src/lib/audio/`): AudioContext wrapper, simple synth voice (poly, ADSR), `playNote(midi, dur)`, master volume; scheduling logic kept pure/testable
 - [ ] Lookahead scheduler for sequencing (tempo, beats, swing-ready), unit-tested with a mock clock
