@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   BASS_TUNINGS,
   CIRCLE_OF_FIFTHS,
+  GUITAR_TUNINGS,
+  TUNINGS,
+  getTuning,
+  tuningsFor,
   chordPcs,
   diatonicTriads,
   fretMidi,
@@ -138,10 +142,27 @@ describe('chords', () => {
 
 describe('instruments', () => {
   it('computes fretboard pitches for standard bass', () => {
-    const bass = BASS_TUNINGS[0]!
+    const bass = getTuning('bass-4')
     expect(fretMidi(bass, 0, 0)).toBe(nameToMidi('E1'))
     expect(fretMidi(bass, 0, 5)).toBe(nameToMidi('A1')) // 5th fret = next open string
     expect(fretMidi(bass, 3, 12)).toBe(nameToMidi('G3'))
     expect(() => fretMidi(bass, 4, 0)).toThrow()
+  })
+
+  it('computes fretboard pitches for standard guitar', () => {
+    const guitar = getTuning('guitar-6')
+    expect(guitar.strings.length).toBe(6)
+    expect(fretMidi(guitar, 0, 0)).toBe(nameToMidi('E2'))
+    expect(fretMidi(guitar, 1, 2)).toBe(nameToMidi('B2'))
+    expect(fretMidi(guitar, 4, 0)).toBe(nameToMidi('B3')) // B string, unlike bass fourths
+    expect(fretMidi(guitar, 5, 12)).toBe(nameToMidi('E5'))
+  })
+
+  it('groups tunings by instrument with unique ids', () => {
+    expect(BASS_TUNINGS.every((t) => t.instrument === 'bass')).toBe(true)
+    expect(GUITAR_TUNINGS.every((t) => t.instrument === 'guitar')).toBe(true)
+    expect(tuningsFor('guitar').map((t) => t.strings.length)).toEqual([6, 6, 6, 7])
+    expect(new Set(TUNINGS.map((t) => t.id)).size).toBe(TUNINGS.length)
+    expect(() => getTuning('banjo-5')).toThrow()
   })
 })

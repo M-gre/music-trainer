@@ -1,8 +1,11 @@
 # Music Trainer
 
-A fully static, client-side practice site for **bass** (primary) and **piano**
-(secondary): note/chord/scale learning, note reading, ear training, dexterity
-drills, metronome, and drum + chord-progression play-alongs.
+A fully static, client-side practice site for **bass** (primary), **piano**
+(secondary), and **guitar**: note/chord/scale learning, note reading, ear
+training, dexterity drills, metronome, and drum + chord-progression
+play-alongs. All fretboard tools must work for both bass and guitar via a
+user-selectable instrument, string count, and tuning (defined in
+`src/lib/theory/instruments.ts`) — never hardcode 4 strings or EADG.
 
 Live site: https://m-gre.github.io/music-trainer/
 Deployed automatically from `main` via `.github/workflows/deploy.yml`.
@@ -42,7 +45,9 @@ The whole point of this site's security posture is having ~zero attack surface:
   scales, chords, spelling, instruments). **Everything musical builds on this;
   keep it pure and fully unit-tested.** Pitches are midi numbers; pitch classes
   are 0–11 (C = 0). Note *spelling* (C# vs Db) is context-dependent — use
-  `spell.ts`, don't hardcode sharp names in UI.
+  `spell.ts`, don't hardcode sharp names in UI. Fretted instruments are
+  described by `Tuning` objects (bass and guitar, various string counts);
+  fretboard code takes a `Tuning`, never assumes an instrument.
 - `src/lib/audio/` (to be created) — Web Audio engine: synth voices, drum
   synthesis, scheduler/sequencer (use the lookahead-scheduler pattern, not
   setInterval-per-note), metronome.

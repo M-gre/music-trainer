@@ -20,8 +20,8 @@ export const TOOLS: Tool[] = [
   {
     route: '/fretboard-notes',
     title: 'Fretboard Note Trainer',
-    description: 'Learn every note on the bass fretboard with quiz modes.',
-    tags: ['bass'],
+    description: 'Learn every note on the fretboard with quiz modes, for any bass or guitar tuning.',
+    tags: ['bass', 'guitar'],
   },
   {
     route: '/keyboard-notes',
@@ -33,13 +33,13 @@ export const TOOLS: Tool[] = [
     route: '/chords',
     title: 'Chord Explorer',
     description: 'Chord shapes and voicings on fretboard and keyboard.',
-    tags: ['bass', 'piano'],
+    tags: ['bass', 'guitar', 'piano'],
   },
   {
     route: '/scales',
     title: 'Scales & Modes',
-    description: 'Visualize scales and modes on both instruments.',
-    tags: ['bass', 'piano', 'theory'],
+    description: 'Visualize scales and modes on fretboard and keyboard.',
+    tags: ['bass', 'guitar', 'piano', 'theory'],
   },
   {
     route: '/circle-of-fifths',
@@ -69,7 +69,7 @@ export const TOOLS: Tool[] = [
     route: '/dexterity',
     title: 'Dexterity Exercises',
     description: 'Spider walks, permutations, and finger independence drills.',
-    tags: ['bass', 'piano'],
+    tags: ['bass', 'guitar', 'piano'],
   },
   {
     route: '/metronome',

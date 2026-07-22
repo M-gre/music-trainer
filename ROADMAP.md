@@ -8,9 +8,10 @@ When adding ideas, add them as unchecked items in the right milestone.
 ## M0 — Foundation
 
 - [x] Project scaffold: Vite + React + TS, hash router, tool registry, home grid, CSP, Pages deploy
-- [x] Theory core: notes, intervals, scales, chords, diatonic triads, spelling, tunings (`src/lib/theory/`)
+- [x] Theory core: notes, intervals, scales, chords, diatonic triads, spelling, tunings for bass and guitar (`src/lib/theory/`)
 - [ ] `src/lib/storage.ts`: typed localStorage wrapper (`mt:` prefix, JSON, versioned, safe on parse errors) with tests
-- [ ] `Fretboard` SVG component: configurable tuning (4/5-string bass) & fret range, note dots with labels, click handler, highlight sets (e.g. scale tones vs root), responsive width
+- [ ] `Fretboard` SVG component: takes any `Tuning` (bass 4/5-string, guitar 6/7-string, drop tunings) & fret range, note dots with labels, click handler, highlight sets (e.g. scale tones vs root), responsive width
+- [ ] Shared instrument picker UI: instrument (bass/guitar) → string count → tuning, persisted as global default via storage lib, used by every fretboard tool
 - [ ] `Keyboard` SVG component: configurable octave range, key highlighting with labels, click handler, responsive
 - [ ] Audio engine core (`src/lib/audio/`): AudioContext wrapper, simple synth voice (poly, ADSR), `playNote(midi, dur)`, master volume; scheduling logic kept pure/testable
 - [ ] Lookahead scheduler for sequencing (tempo, beats, swing-ready), unit-tested with a mock clock
@@ -18,7 +19,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 ## M1 — Note learning
 
-- [ ] Fretboard Note Trainer: "find note X on string Y" and "name the highlighted fret" quiz modes, fret-range and string filters, score streak, uses Fretboard component
+- [ ] Fretboard Note Trainer: "find note X on string Y" and "name the highlighted fret" quiz modes, fret-range and string filters, score streak, uses Fretboard component with the selected instrument/tuning (bass or guitar)
 - [ ] Keyboard Note Trainer: same quiz modes on the Keyboard component
 - [ ] Progress stats per note (accuracy, response time) persisted via storage lib; weakest-notes-first question picking
 - [ ] Note Reading: render single notes on a staff (SVG, bass + treble clef), answer via fretboard/keyboard/name buttons, ledger lines, key-signature-aware naming
@@ -52,7 +53,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 ## M5 — Dexterity
 
 - [ ] Exercise engine: patterns as fret/finger sequences, rendered on Fretboard with numbered order + metronome sync
-- [ ] Bass exercises: spider walk (1-2-3-4 permutations), string crossing, position shifts
+- [ ] Bass/guitar exercises: spider walk (1-2-3-4 permutations), string crossing, position shifts — tuning-aware so they render on any fretted instrument
 - [ ] Permutation generator: all 24 finger orderings, random daily set
 - [ ] Piano exercises: 5-finger patterns, scale fingerings with correct finger numbers displayed on Keyboard
 
@@ -62,4 +63,5 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [ ] Spaced repetition for all quiz tools (shared lib)
 - [ ] PWA manifest + service worker for full offline use (self-contained, CSP-compatible)
 - [ ] Keyboard shortcuts for quiz answering; accessibility pass (focus, ARIA, contrast)
-- [ ] Settings page: default instrument/tuning, left-handed fretboard flip, sharps/flats preference, volume
+- [ ] Settings page: default instrument/tuning (bass & guitar, all string counts), left-handed fretboard flip, sharps/flats preference, volume
+- [ ] Custom tuning editor: define and save arbitrary tunings (name + per-string pitch) alongside the built-ins
