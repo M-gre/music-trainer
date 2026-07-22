@@ -112,3 +112,97 @@ a.tool-card:hover {
 .not-found a {
   color: var(--accent);
 }
+
+/* ---- Fretboard SVG component ---- */
+
+.fb-fretboard {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  font-family: inherit;
+}
+
+.fb-neck {
+  fill: var(--bg-raised);
+  stroke: var(--border);
+  stroke-width: 1;
+  rx: 4;
+}
+
+.fb-wire {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.fb-nut {
+  stroke: var(--text-dim);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.fb-string {
+  stroke: #6d7480;
+  stroke-linecap: round;
+}
+
+.fb-inlay {
+  fill: var(--border);
+}
+
+.fb-fret-number {
+  fill: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fb-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.fb-hit:hover {
+  fill: rgba(232, 163, 61, 0.12);
+}
+
+/* Marker dots */
+.fb-dot {
+  pointer-events: none;
+}
+
+.fb-dot text {
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--bg);
+}
+
+.fb-dot-default circle {
+  fill: var(--text-dim);
+}
+
+.fb-dot-default text {
+  fill: var(--bg);
+}
+
+.fb-dot-root circle {
+  fill: var(--accent);
+}
+
+.fb-dot-accent circle {
+  fill: #4a90d9;
+}
+
+.fb-dot-accent text {
+  fill: var(--text);
+}
+
+.fb-dot-dim circle {
+  fill: transparent;
+  stroke: var(--text-dim);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+
+.fb-dot-dim text {
+  fill: var(--text-dim);
+}
