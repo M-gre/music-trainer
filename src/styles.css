@@ -207,6 +207,92 @@ a.tool-card:hover {
   fill: var(--text-dim);
 }
 
+/* ---- Keyboard SVG component ---- */
+
+.kb-keyboard {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  font-family: inherit;
+}
+
+.kb-key {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.kb-white {
+  fill: #e8eaed;
+}
+
+.kb-black {
+  fill: #1a1c20;
+  stroke: #000;
+}
+
+/* Pointer cursor / hover feedback only when the board is clickable. */
+.kb-interactive .kb-key {
+  cursor: pointer;
+}
+
+.kb-interactive .kb-white:hover {
+  fill: #cfd3d9;
+}
+
+.kb-interactive .kb-black:hover {
+  fill: #2a2d33;
+}
+
+.kb-key-label {
+  fill: #5a5f68;
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* Highlight dots — same palette and variants as the fretboard markers. */
+.kb-dot {
+  pointer-events: none;
+}
+
+.kb-dot text {
+  font-size: 11px;
+  font-weight: 700;
+  fill: var(--bg);
+}
+
+.kb-dot-default circle {
+  fill: var(--text-dim);
+}
+
+.kb-dot-default text {
+  fill: var(--bg);
+}
+
+.kb-dot-root circle {
+  fill: var(--accent);
+}
+
+.kb-dot-accent circle {
+  fill: #4a90d9;
+}
+
+.kb-dot-accent text {
+  fill: var(--text);
+}
+
+.kb-dot-dim circle {
+  fill: var(--bg-raised);
+  stroke: var(--text-dim);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+
+.kb-dot-dim text {
+  fill: var(--text);
+}
+
 /* ---- InstrumentPicker ---- */
 
 .ip-picker {

@@ -1,0 +1,181 @@
+/**
+ * `Keyboard` — a pure, props-driven SVG view of a piano keyboard.
+ *
+ * It contains no tool-specific logic: callers pass a pitch range (as midi
+ * numbers or an octave range), a set of highlight `markers`, and receive a
+ * click callback with the midi pitch of the key pressed. White keys have
+ * equal width; black keys are narrower and shorter, painted on top and
+ * centred on the boundary between the white keys they fall between (there is
+ * no black key on the E–F or B–C boundary). The SVG scales responsively to
+ * its container width via a `viewBox`. All geometry lives in
+ * `keyboardGeometry.ts`.
+ */
+
+import type { MarkerVariant } from './Fretboard.tsx'
+import {
+  blackKeyMidis,
+  blackKeyX,
+  computeLayout,
+  DEFAULT_LAYOUT,
+  defaultKeyLabel,
+  isBlackKey,
+  type KeyboardLayoutConfig,
+  keyCenterX,
+  octaveRangeToMidi,
+  whiteKeyMidis,
+  whiteKeyX,
+} from './keyboardGeometry.ts'
+
+/** A highlighted key on the keyboard. */
+export interface KeyboardMarker {
+  /** Midi pitch of the key to highlight. */
+  midi: number
+  /** Label drawn in the dot; defaults to the key's pitch-class name. */
+  label?: string
+  /** Highlight kind; defaults to `'default'`. Matches the Fretboard vocabulary. */
+  variant?: MarkerVariant
+}
+
+/** Which white-key names to print as static labels. */
+export type KeyboardLabelMode = 'none' | 'c' | 'all'
+
+export interface KeyboardProps {
+  /**
+   * Lowest midi pitch shown. Snapped down to a white key. If omitted, the
+   * range is derived from `fromOctave`/`toOctave` (default octaves 3–4).
+   */
+  from?: number
+  /** Highest midi pitch shown. Snapped up to a white key. */
+  to?: number
+  /** Lowest octave shown (scientific pitch, C4 = middle C). Default 3. */
+  fromOctave?: number
+  /** Highest octave shown. Default 4. */
+  toOctave?: number
+  /** Highlighted keys. */
+  markers?: KeyboardMarker[]
+  /** Called when any key is clicked. */
+  onKeyClick?: (key: { midi: number }) => void
+  /**
+   * Static white-key name labels: `'none'`, `'c'` (only C keys, with octave
+   * for orientation) or `'all'` (every white key). Default `'c'`.
+   */
+  showLabels?: KeyboardLabelMode
+  /** Accidental spelling for default labels. Default `'sharp'`. */
+  prefer?: 'sharp' | 'flat'
+  /** Pixel layout overrides (partial). */
+  layoutConfig?: Partial<KeyboardLayoutConfig>
+  /** Extra class on the root `<svg>`. */
+  className?: string
+  /** Accessible label for the SVG. */
+  ariaLabel?: string
+}
+
+export function Keyboard({
+  from,
+  to,
+  fromOctave = 3,
+  toOctave = 4,
+  markers = [],
+  onKeyClick,
+  showLabels = 'c',
+  prefer = 'sharp',
+  layoutConfig,
+  className,
+  ariaLabel,
+}: KeyboardProps) {
+  const config: KeyboardLayoutConfig = { ...DEFAULT_LAYOUT, ...layoutConfig }
+  const octRange = octaveRangeToMidi(fromOctave, toOctave)
+  const rawFrom = from ?? octRange.from
+  const rawTo = to ?? octRange.to
+  const layout = computeLayout(rawFrom, rawTo, config)
+
+  const whites = whiteKeyMidis(layout.from, layout.to)
+  const blacks = blackKeyMidis(layout.from, layout.to)
+  const markerByMidi = new Map(markers.map((m) => [m.midi, m]))
+
+  // Marker dot radius fits inside the narrower black keys.
+  const dotR = layout.blackWidth * 0.42
+  const dotPad = 8
+
+  const showWhiteLabel = (midi: number): boolean => {
+    if (showLabels === 'all') return true
+    if (showLabels === 'c') return midi % 12 === 0
+    return false
+  }
+
+  return (
+    <svg
+      className={`kb-keyboard${onKeyClick ? ' kb-interactive' : ''}${className ? ` ${className}` : ''}`}
+      viewBox={`0 0 ${layout.width} ${layout.height}`}
+      width="100%"
+      role="img"
+      aria-label={ariaLabel ?? 'piano keyboard'}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      {/* White keys */}
+      {whites.map((midi) => (
+        <rect
+          key={`white-${midi}`}
+          className="kb-key kb-white"
+          x={whiteKeyX(layout, midi)}
+          y={layout.boardTop}
+          width={layout.whiteWidth}
+          height={layout.whiteHeight}
+          rx={3}
+          onClick={onKeyClick ? () => onKeyClick({ midi }) : undefined}
+        />
+      ))}
+
+      {/* Black keys, painted on top */}
+      {blacks.map((midi) => (
+        <rect
+          key={`black-${midi}`}
+          className="kb-key kb-black"
+          x={blackKeyX(layout, midi)}
+          y={layout.boardTop}
+          width={layout.blackWidth}
+          height={layout.blackHeight}
+          rx={2}
+          onClick={onKeyClick ? () => onKeyClick({ midi }) : undefined}
+        />
+      ))}
+
+      {/* Static white-key name labels near the bottom of each key */}
+      {whites.filter(showWhiteLabel).map((midi) => (
+        <text
+          key={`label-${midi}`}
+          className="kb-key-label"
+          x={keyCenterX(layout, midi)}
+          y={layout.boardTop + layout.whiteHeight - 6}
+          textAnchor="middle"
+        >
+          {defaultKeyLabel(midi, prefer, true)}
+        </text>
+      ))}
+
+      {/* Highlight dots (rendered last, on top of every key) */}
+      {[...whites, ...blacks]
+        .filter((midi) => markerByMidi.has(midi))
+        .map((midi) => {
+          const marker = markerByMidi.get(midi)!
+          const variant = marker.variant ?? 'default'
+          const label = marker.label ?? defaultKeyLabel(midi, prefer)
+          const black = isBlackKey(midi)
+          const cy = layout.boardTop + (black ? layout.blackHeight : layout.whiteHeight) - dotR - dotPad
+          return (
+            <g key={`dot-${midi}`} className={`kb-dot kb-dot-${variant}`}>
+              <circle cx={keyCenterX(layout, midi)} cy={cy} r={dotR} />
+              <text
+                x={keyCenterX(layout, midi)}
+                y={cy}
+                textAnchor="middle"
+                dominantBaseline="central"
+              >
+                {label}
+              </text>
+            </g>
+          )
+        })}
+    </svg>
+  )
+}
