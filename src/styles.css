@@ -921,6 +921,35 @@ a.tool-card:hover {
   font-size: 0.82rem;
 }
 
+.se-view.cf-instrument-view {
+  padding: 0;
+  overflow: hidden;
+}
+
+.cf-instrument-summary {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.6rem 1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  list-style: revert;
+}
+
+.cf-instrument-summary::marker {
+  color: var(--text-dim);
+}
+
+.cf-instrument-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0 1rem 1rem;
+  overflow-x: auto;
+}
+
 @media (max-width: 480px) {
   .cf-label {
     font-size: 12px;

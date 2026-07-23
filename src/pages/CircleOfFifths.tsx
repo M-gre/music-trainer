@@ -11,6 +11,15 @@
  * AudioContext is only created/resumed inside click handlers (`ensureRunning`),
  * matching the Metronome page's pattern, so the page never triggers the
  * browser's autoplay block.
+ *
+ * The detail panel also hosts instrument views (fretboard + keyboard) for the
+ * selected key's scale, reusing the Scales explorer's marker-building
+ * (`../lib/scaleExplorer.ts`) rather than re-deriving it. A toggle switches
+ * the highlighted scale between the key's major scale and its relative
+ * natural minor (root marker moves to the relative minor's tonic). Each view
+ * is a native `<details>` accordion so it stays collapsible/tappable on a
+ * phone without blowing up page height; they default open on wide viewports
+ * and collapsed on narrow ones.
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react'
@@ -24,16 +33,35 @@ import {
   signatureNotes,
   type CircleKey,
 } from '../components/circleGeometry.ts'
+import { Fretboard } from '../components/Fretboard.tsx'
+import { Keyboard } from '../components/Keyboard.tsx'
+import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
+import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
 import { getAudioEngine } from '../lib/audio/index.ts'
 import {
   circleOfFifthsSettingsStore,
   normalizeCircleOfFifthsSettings,
+  type CircleOfFifthsSettings,
 } from '../lib/circleOfFifthsSettings.ts'
+import {
+  buildFretboardMarkers,
+  buildKeyboardMarkers,
+  playbackRootMidi,
+} from '../lib/scaleExplorer.ts'
 import { diatonicTriads } from '../lib/theory/chords.ts'
 import { getScale, prefersFlats, spellScale } from '../lib/theory/index.ts'
 import { pcToName } from '../lib/theory/notes.ts'
 
 const MAJOR_INTERVALS = getScale('major').intervals
+const MINOR_INTERVALS = getScale('minor').intervals
+
+/** Narrow viewports default the instrument-view accordions to collapsed. */
+const NARROW_VIEWPORT_QUERY = '(max-width: 640px)'
+
+function defaultInstrumentViewOpen(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true
+  return !window.matchMedia(NARROW_VIEWPORT_QUERY).matches
+}
 
 // SVG layout (viewBox units; scales down responsively via width: 100%).
 const SIZE = 320
@@ -67,14 +95,30 @@ function signatureTextOf(key: CircleKey): string {
 
 export function CircleOfFifths() {
   const engineRef = useRef(getAudioEngine())
-  const [selectedIndex, setSelectedIndex] = useState(
-    () => normalizeCircleOfFifthsSettings(circleOfFifthsSettingsStore.get()).selectedIndex,
+  const { tuning, setTuningId } = useInstrumentSettings()
+  const [settings, setSettings] = useState<CircleOfFifthsSettings>(() =>
+    normalizeCircleOfFifthsSettings(circleOfFifthsSettingsStore.get()),
   )
   const [busy, setBusy] = useState(false)
+  const [fretboardOpen, setFretboardOpen] = useState(defaultInstrumentViewOpen)
+  const [keyboardOpen, setKeyboardOpen] = useState(defaultInstrumentViewOpen)
+
+  const { selectedIndex, scaleView } = settings
 
   const selectKey = useCallback((index: number) => {
-    setSelectedIndex(index)
-    circleOfFifthsSettingsStore.set({ selectedIndex: index })
+    setSettings((prev) => {
+      const next: CircleOfFifthsSettings = { ...prev, selectedIndex: index }
+      circleOfFifthsSettingsStore.set(next)
+      return next
+    })
+  }, [])
+
+  const setScaleView = useCallback((view: CircleOfFifthsSettings['scaleView']) => {
+    setSettings((prev) => {
+      const next: CircleOfFifthsSettings = { ...prev, scaleView: view }
+      circleOfFifthsSettingsStore.set(next)
+      return next
+    })
   }, [])
 
   const selected = CIRCLE_KEYS[selectedIndex] ?? CIRCLE_KEYS[0]!
@@ -89,6 +133,30 @@ export function CircleOfFifths() {
   const scaleMidis = useMemo(
     () => MAJOR_INTERVALS.map((i) => PLAYBACK_BASE_MIDI + selected.majorPc + i),
     [selected],
+  )
+
+  // Instrument views: highlight either the key's major scale or its relative
+  // natural minor, reusing the Scales explorer's marker builders so the
+  // fretboard/keyboard shapes stay in sync with that tool.
+  const activeRootPc = scaleView === 'major' ? selected.majorPc : selected.minorPc
+  const activeIntervals = scaleView === 'major' ? MAJOR_INTERVALS : MINOR_INTERVALS
+  const activeRootName = scaleView === 'major' ? selected.majorName : selected.minorName
+  const activePrefer = prefersFlats(activeRootPc) ? 'flat' : 'sharp'
+
+  const fretMarkers = useMemo(
+    () => buildFretboardMarkers(tuning, 0, 12, activeRootPc, activeIntervals, { display: 'names', prefer: activePrefer }),
+    [tuning, activeRootPc, activeIntervals, activePrefer],
+  )
+
+  const keyboardRoot = playbackRootMidi(activeRootPc)
+  const keyMarkers = useMemo(
+    () =>
+      buildKeyboardMarkers(keyboardRoot, activeIntervals, {
+        display: 'names',
+        prefer: activePrefer,
+        octaves: 2,
+      }),
+    [keyboardRoot, activeIntervals, activePrefer],
   )
 
   const playScale = useCallback(async () => {
@@ -239,6 +307,67 @@ export function CircleOfFifths() {
               </span>
             ))}
           </div>
+        </div>
+
+        <div className="cf-detail-section">
+          <div className="cf-detail-row">
+            <span className="tool-control-label">Instrument views</span>
+            <div className="se-segmented" role="group" aria-label="Scale shown on the fretboard and keyboard">
+              <button
+                type="button"
+                className={`se-segment${scaleView === 'major' ? ' se-segment-active' : ''}`}
+                aria-pressed={scaleView === 'major'}
+                onClick={() => setScaleView('major')}
+              >
+                Major scale
+              </button>
+              <button
+                type="button"
+                className={`se-segment${scaleView === 'minor' ? ' se-segment-active' : ''}`}
+                aria-pressed={scaleView === 'minor'}
+                onClick={() => setScaleView('minor')}
+              >
+                Relative minor
+              </button>
+            </div>
+          </div>
+
+          <details
+            className="se-view cf-instrument-view"
+            open={fretboardOpen}
+            onToggle={(e) => setFretboardOpen(e.currentTarget.open)}
+          >
+            <summary className="cf-instrument-summary">Fretboard</summary>
+            <div className="cf-instrument-body">
+              <InstrumentPicker value={tuning} onChange={(t) => setTuningId(t.id)} />
+              <Fretboard
+                tuning={tuning}
+                fromFret={0}
+                toFret={12}
+                markers={fretMarkers}
+                prefer={activePrefer}
+                ariaLabel={`${activeRootName} ${scaleView} scale on ${tuning.name}`}
+              />
+            </div>
+          </details>
+
+          <details
+            className="se-view cf-instrument-view"
+            open={keyboardOpen}
+            onToggle={(e) => setKeyboardOpen(e.currentTarget.open)}
+          >
+            <summary className="cf-instrument-summary">Keyboard</summary>
+            <div className="cf-instrument-body">
+              <Keyboard
+                from={keyboardRoot}
+                to={keyboardRoot + 24}
+                markers={keyMarkers}
+                prefer={activePrefer}
+                showLabels="c"
+                ariaLabel={`${activeRootName} ${scaleView} scale on the keyboard`}
+              />
+            </div>
+          </details>
         </div>
 
         <div className="cf-detail-section">
