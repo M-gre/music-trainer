@@ -34,11 +34,14 @@ describe('clampFret', () => {
 describe('normalizeDexteritySettings', () => {
   it('passes through a valid value', () => {
     const value = {
-      mode: 'scale',
+      mode: 'arpeggio',
       patternId: 'chromatic-4nps',
       scaleRootPc: 3,
       scaleId: 'dorian',
       sequenceId: 'groups-of-4',
+      arpRootPc: 5,
+      arpQualityId: 'min7',
+      arpInversion: 'first',
       position: 7,
       bpm: 100,
       notesPerBeat: 2,
@@ -58,6 +61,22 @@ describe('normalizeDexteritySettings', () => {
       DEFAULT_DEXTERITY_SETTINGS.sequenceId,
     )
     expect(normalizeDexteritySettings({ mode: 'bogus' }).mode).toBe(DEFAULT_DEXTERITY_SETTINGS.mode)
+  })
+
+  it('accepts the arpeggio mode', () => {
+    expect(normalizeDexteritySettings({ mode: 'arpeggio' }).mode).toBe('arpeggio')
+  })
+
+  it('rejects an unknown arpeggio quality and inversion, wraps the arp root', () => {
+    expect(normalizeDexteritySettings({ arpQualityId: 'sus4' }).arpQualityId).toBe(
+      DEFAULT_DEXTERITY_SETTINGS.arpQualityId,
+    )
+    expect(normalizeDexteritySettings({ arpQualityId: 'dim7' }).arpQualityId).toBe('dim7')
+    expect(normalizeDexteritySettings({ arpInversion: 'fourth' }).arpInversion).toBe(
+      DEFAULT_DEXTERITY_SETTINGS.arpInversion,
+    )
+    expect(normalizeDexteritySettings({ arpInversion: 'second' }).arpInversion).toBe('second')
+    expect(normalizeDexteritySettings({ arpRootPc: 15 }).arpRootPc).toBe(3)
   })
 
   it('wraps the scale root pitch class into 0–11', () => {
@@ -116,6 +135,9 @@ describe('migrateDexteritySettings', () => {
       scaleRootPc: DEFAULT_DEXTERITY_SETTINGS.scaleRootPc,
       scaleId: DEFAULT_DEXTERITY_SETTINGS.scaleId,
       sequenceId: DEFAULT_DEXTERITY_SETTINGS.sequenceId,
+      arpRootPc: DEFAULT_DEXTERITY_SETTINGS.arpRootPc,
+      arpQualityId: DEFAULT_DEXTERITY_SETTINGS.arpQualityId,
+      arpInversion: DEFAULT_DEXTERITY_SETTINGS.arpInversion,
     })
   })
 
@@ -136,28 +158,53 @@ describe('migrateDexteritySettings', () => {
       scaleRootPc: DEFAULT_DEXTERITY_SETTINGS.scaleRootPc,
       scaleId: DEFAULT_DEXTERITY_SETTINGS.scaleId,
       sequenceId: DEFAULT_DEXTERITY_SETTINGS.sequenceId,
+      arpRootPc: DEFAULT_DEXTERITY_SETTINGS.arpRootPc,
+      arpQualityId: DEFAULT_DEXTERITY_SETTINGS.arpQualityId,
+      arpInversion: DEFAULT_DEXTERITY_SETTINGS.arpInversion,
     })
   })
 
-  it('a v2-tagged envelope in the store is transparently upgraded to v3', () => {
+  it('fills in the arpeggio fields with defaults for v3 data that lacks them', () => {
+    const v3Data = {
+      mode: 'scale',
+      patternId: 'chromatic-4nps',
+      scaleRootPc: 3,
+      scaleId: 'dorian',
+      sequenceId: 'groups-of-4',
+      position: 7,
+      bpm: 100,
+      notesPerBeat: 2,
+      autoAdvance: true,
+      advanceMin: 3,
+      advanceMax: 9,
+      direction: 'reverse',
+    }
+    expect(migrateDexteritySettings(v3Data)).toEqual({
+      ...v3Data,
+      arpRootPc: DEFAULT_DEXTERITY_SETTINGS.arpRootPc,
+      arpQualityId: DEFAULT_DEXTERITY_SETTINGS.arpQualityId,
+      arpInversion: DEFAULT_DEXTERITY_SETTINGS.arpInversion,
+    })
+  })
+
+  it('a v3-tagged envelope in the store is transparently upgraded to v4', () => {
     const backend = memoryBackend()
-    const v2Data = { ...DEFAULT_DEXTERITY_SETTINGS, bpm: 140 } as Partial<DexteritySettings>
-    delete v2Data.mode
-    delete v2Data.scaleRootPc
-    delete v2Data.scaleId
-    delete v2Data.sequenceId
-    backend.setItem('mt:settings:dexterity', JSON.stringify({ v: 2, data: v2Data }))
+    const v3Data = { ...DEFAULT_DEXTERITY_SETTINGS, bpm: 140 } as Partial<DexteritySettings>
+    delete v3Data.arpRootPc
+    delete v3Data.arpQualityId
+    delete v3Data.arpInversion
+    backend.setItem('mt:settings:dexterity', JSON.stringify({ v: 3, data: v3Data }))
 
     const store = createDexteritySettingsStore(backend)
     const loaded = store.get()
-    expect(loaded.mode).toBe(DEFAULT_DEXTERITY_SETTINGS.mode)
-    expect(loaded.scaleId).toBe(DEFAULT_DEXTERITY_SETTINGS.scaleId)
-    expect(loaded.sequenceId).toBe(DEFAULT_DEXTERITY_SETTINGS.sequenceId)
+    expect(loaded.arpRootPc).toBe(DEFAULT_DEXTERITY_SETTINGS.arpRootPc)
+    expect(loaded.arpQualityId).toBe(DEFAULT_DEXTERITY_SETTINGS.arpQualityId)
+    expect(loaded.arpInversion).toBe(DEFAULT_DEXTERITY_SETTINGS.arpInversion)
     expect(loaded.bpm).toBe(140)
 
     // The migration also persists the upgraded shape.
     const rawAfter = JSON.parse(backend.getItem('mt:settings:dexterity')!) as { v: number }
-    expect(rawAfter.v).toBe(3)
+    expect(rawAfter.v).toBe(4)
   })
 })
 

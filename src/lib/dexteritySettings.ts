@@ -8,11 +8,19 @@
  *
  * v2 added `direction` (forward / reverse / forward-then-reverse playback,
  * independent of a pattern's own traversal); v3 added the scale-sequence drill
- * fields (`mode`, `scaleRootPc`, `scaleId`, `sequenceId`). Older data is
- * migrated by filling any missing field in with its default
- * (`normalizeDexteritySettings` handles this for every version).
+ * fields (`mode`, `scaleRootPc`, `scaleId`, `sequenceId`); v4 added the
+ * arpeggio-drill fields (`arpRootPc`, `arpQualityId`, `arpInversion`) and the
+ * `'arpeggio'` mode. Older data is migrated by filling any missing field in
+ * with its default (`normalizeDexteritySettings` handles every version).
  */
 
+import {
+  DEFAULT_ARPEGGIO_QUALITY_ID,
+  DEFAULT_INVERSION,
+  type Inversion,
+  isArpeggioQualityId,
+  isInversion,
+} from './arpeggioDrills.ts'
 import {
   BUILTIN_PATTERNS,
   clampInt,
@@ -38,13 +46,13 @@ export const MAX_FRET = 22
 /** Selectable notes-per-beat (metronome subdivisions driving step advancement). */
 export const NOTES_PER_BEAT_OPTIONS = [1, 2, 3, 4] as const
 
-/** Which family of drill the tool is showing: built-in patterns or scale sequences. */
-export type DexterityMode = 'pattern' | 'scale'
+/** Which family of drill the tool is showing: built-in patterns, scale sequences, or arpeggios. */
+export type DexterityMode = 'pattern' | 'scale' | 'arpeggio'
 
-export const DEXTERITY_MODES: readonly DexterityMode[] = ['pattern', 'scale']
+export const DEXTERITY_MODES: readonly DexterityMode[] = ['pattern', 'scale', 'arpeggio']
 
 export interface DexteritySettings {
-  /** Whether the tool is running a built-in pattern or a scale-sequence drill. */
+  /** Whether the tool is running a built-in pattern, a scale-sequence, or an arpeggio drill. */
   mode: DexterityMode
   /** Chosen pattern id (used in `mode: 'pattern'`). */
   patternId: string
@@ -54,6 +62,12 @@ export interface DexteritySettings {
   scaleId: string
   /** Sequence pattern id (used in `mode: 'scale'`). */
   sequenceId: SequencePatternId
+  /** Arpeggio chord root pitch class 0–11 (used in `mode: 'arpeggio'`). */
+  arpRootPc: number
+  /** Arpeggio chord-quality id (used in `mode: 'arpeggio'`). */
+  arpQualityId: string
+  /** Arpeggio inversion (used in `mode: 'arpeggio'`). */
+  arpInversion: Inversion
   /** Starting fret (the position's base/index fret). */
   position: number
   /** Tempo in beats per minute. */
@@ -76,6 +90,9 @@ export const DEFAULT_DEXTERITY_SETTINGS: DexteritySettings = {
   scaleRootPc: 0,
   scaleId: 'major',
   sequenceId: DEFAULT_SEQUENCE_ID,
+  arpRootPc: 0,
+  arpQualityId: DEFAULT_ARPEGGIO_QUALITY_ID,
+  arpInversion: DEFAULT_INVERSION,
   position: 5,
   bpm: 80,
   notesPerBeat: 1,
@@ -107,7 +124,9 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
     Record<keyof DexteritySettings, unknown>
   >
   const mode: DexterityMode =
-    v.mode === 'pattern' || v.mode === 'scale' ? v.mode : DEFAULT_DEXTERITY_SETTINGS.mode
+    v.mode === 'pattern' || v.mode === 'scale' || v.mode === 'arpeggio'
+      ? v.mode
+      : DEFAULT_DEXTERITY_SETTINGS.mode
   const patternId =
     typeof v.patternId === 'string' &&
     (BUILTIN_PATTERNS.some((p) => p.id === v.patternId) || isPermutationId(v.patternId))
@@ -125,6 +144,18 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
     typeof v.sequenceId === 'string' && isSequencePatternId(v.sequenceId)
       ? v.sequenceId
       : DEFAULT_DEXTERITY_SETTINGS.sequenceId
+  const arpRootPc =
+    typeof v.arpRootPc === 'number' && Number.isFinite(v.arpRootPc)
+      ? mod12(Math.round(v.arpRootPc))
+      : DEFAULT_DEXTERITY_SETTINGS.arpRootPc
+  const arpQualityId =
+    typeof v.arpQualityId === 'string' && isArpeggioQualityId(v.arpQualityId)
+      ? v.arpQualityId
+      : DEFAULT_DEXTERITY_SETTINGS.arpQualityId
+  const arpInversion: Inversion =
+    typeof v.arpInversion === 'string' && isInversion(v.arpInversion)
+      ? v.arpInversion
+      : DEFAULT_DEXTERITY_SETTINGS.arpInversion
   const position = typeof v.position === 'number' ? clampFret(v.position) : DEFAULT_DEXTERITY_SETTINGS.position
   const bpm = typeof v.bpm === 'number' ? clampBpm(v.bpm) : DEFAULT_DEXTERITY_SETTINGS.bpm
   const notesPerBeat =
@@ -149,6 +180,9 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
     scaleRootPc,
     scaleId,
     sequenceId,
+    arpRootPc,
+    arpQualityId,
+    arpInversion,
     position,
     bpm,
     notesPerBeat,
@@ -162,7 +196,8 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
 /**
  * Migrate persisted data from an older schema version. v1 lacked `direction`;
  * v2 lacked the scale-sequence fields (`mode`, `scaleRootPc`, `scaleId`,
- * `sequenceId`). `normalizeDexteritySettings` fills every missing field in
+ * `sequenceId`); v3 lacked the arpeggio fields (`arpRootPc`, `arpQualityId`,
+ * `arpInversion`). `normalizeDexteritySettings` fills every missing field in
  * with its default, so a single pass upgrades data from any prior version.
  */
 export function migrateDexteritySettings(oldData: unknown): DexteritySettings {
@@ -174,7 +209,7 @@ export function createDexteritySettingsStore(backend?: StorageBackend): Store<De
   return new Store<DexteritySettings>(
     {
       key: 'settings:dexterity',
-      version: 3,
+      version: 4,
       defaultValue: DEFAULT_DEXTERITY_SETTINGS,
       migrate: migrateDexteritySettings,
     },
