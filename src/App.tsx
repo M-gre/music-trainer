@@ -12,6 +12,7 @@ import { ScalesExplorer } from './pages/ScalesExplorer.tsx'
 import { ChordExplorer } from './pages/ChordExplorer.tsx'
 import { EarTraining } from './pages/EarTraining.tsx'
 import { Dexterity } from './pages/Dexterity.tsx'
+import { PlayAlong } from './pages/PlayAlong.tsx'
 
 export interface Tool {
   route: string
@@ -96,6 +97,7 @@ export const TOOLS: Tool[] = [
     title: 'Play-Along',
     description: 'Drum grooves plus chord progressions in any key and tempo.',
     tags: ['bass', 'piano', 'rhythm'],
+    page: () => <PlayAlong />,
   },
   {
     route: '/dexterity',

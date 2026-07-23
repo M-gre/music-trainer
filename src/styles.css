@@ -689,6 +689,321 @@ a.tool-card:hover {
   background: var(--bg-hover);
 }
 
+/* ---- Play-Along ---- */
+
+.pa-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.pa-groove-group {
+  flex: 1 1 100%;
+}
+
+.pa-grooves {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.5rem;
+}
+
+.pa-groove {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+  text-align: left;
+  min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: border-color 60ms ease, background 60ms ease;
+}
+
+.pa-groove:hover {
+  border-color: var(--accent-dim);
+}
+
+.pa-groove-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+}
+
+.pa-groove-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.pa-groove-meta {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+}
+
+.pa-groove-desc {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  line-height: 1.25;
+}
+
+/* Beat indicator — dots lit from the scheduler position; beat 1 is distinct. */
+.pa-beats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.pa-dot {
+  display: block;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  transition: transform 60ms ease, background 60ms ease, border-color 60ms ease;
+}
+
+.pa-dot-downbeat {
+  width: 1.4rem;
+  height: 1.4rem;
+  border-color: var(--accent-dim);
+}
+
+.pa-dot-active {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  transform: scale(1.18);
+}
+
+.pa-dot-downbeat.pa-dot-active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* While counting in, tint the lit dot to signal it isn't the groove yet. */
+.pa-beats[data-counting-in='true'] .pa-dot-active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pa-beats-hint {
+  margin: 0.4rem 0 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.pa-tempo-group {
+  flex: 1 1 14rem;
+}
+
+.pa-tempo-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.pa-tempo-value {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.pa-tempo-unit {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pa-steppers {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.pa-stepper {
+  flex: 1 1 0;
+  padding: 0.5rem 0;
+  min-height: 2.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.pa-stepper:hover {
+  border-color: var(--accent-dim);
+}
+
+.pa-stepper:active {
+  background: var(--bg-hover);
+}
+
+.pa-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.pa-mute-group {
+  flex: 1 1 14rem;
+}
+
+.pa-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pa-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+  transition: border-color 60ms ease, background 60ms ease, opacity 60ms ease;
+}
+
+.pa-chip:hover {
+  border-color: var(--accent-dim);
+}
+
+.pa-chip-state {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.pa-chip-muted {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.pa-chip-muted .pa-chip-state {
+  color: var(--text-dim);
+}
+
+.pa-options-group {
+  flex: 1 1 14rem;
+}
+
+.pa-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  padding: 0.3rem 0.4rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  touch-action: manipulation;
+}
+
+.pa-toggle-track {
+  display: inline-flex;
+  align-items: center;
+  width: 3rem;
+  height: 1.6rem;
+  padding: 0.15rem;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+.pa-toggle-thumb {
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 80ms ease, background 80ms ease;
+}
+
+.pa-toggle-on .pa-toggle-track {
+  background: color-mix(in srgb, var(--accent) 30%, var(--bg));
+  border-color: var(--accent);
+}
+
+.pa-toggle-on .pa-toggle-thumb {
+  transform: translateX(1.4rem);
+  background: var(--accent);
+}
+
+.pa-volume-label {
+  margin-top: 0.4rem;
+}
+
+.pa-volume {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pa-volume-value {
+  min-width: 3ch;
+  text-align: right;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.pa-transport {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.pa-start {
+  flex: 1 1 0;
+  min-height: 3.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  touch-action: manipulation;
+}
+
+.pa-start-active {
+  color: var(--text);
+  background: #b8433a;
+  border-color: #b8433a;
+}
+
 /* ---- Fretboard Note Trainer ---- */
 
 .fnt-prompt {
