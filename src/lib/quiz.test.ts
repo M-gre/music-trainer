@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyStats, pickAvoiding, QuizSession, type Rng } from './quiz.ts'
+import { emptyStats, FindAllSession, pickAvoiding, QuizSession, type Rng } from './quiz.ts'
 
 /** Deterministic rng returning the supplied values in order, then looping. */
 function seq(...values: number[]): Rng {
@@ -190,6 +190,120 @@ describe('QuizSession', () => {
     s.reset()
     expect(s.current).toBeNull()
     expect(s.lastResult).toBeNull()
+    expect(s.stats).toEqual(emptyStats())
+  })
+})
+
+describe('FindAllSession', () => {
+  // Each question is a pitch class 0..2; its targets are the string keys with
+  // that class in a fixed board: pc 0 -> ['a','b'], pc 1 -> ['c'], pc 2 -> ['d'].
+  const targets: Record<number, string[]> = { 0: ['a', 'b'], 1: ['c'], 2: ['d'] }
+  function pcSession(rng: Rng) {
+    let n = -1
+    return new FindAllSession<number, string>({
+      generate: (previous) => {
+        n = (n + 1) % 3
+        return previous === n ? (n + 1) % 3 : n
+      },
+      targetsOf: (q) => targets[q]!,
+      keyOf: (a) => a,
+      rng,
+    })
+  }
+
+  it('starts empty and presents a question with its targets on next()', () => {
+    const s = pcSession(seq(0))
+    expect(s.current).toBeNull()
+    expect(s.stats).toEqual(emptyStats())
+    expect(s.next()).toBe(0)
+    expect(s.progress).toEqual({ found: 0, total: 2, mistakes: 0, complete: false })
+    expect(s.foundKeys).toEqual([])
+  })
+
+  it('throws if submit is called before next()', () => {
+    const s = pcSession(seq(0))
+    expect(() => s.submit('a')).toThrow()
+  })
+
+  it('marks a newly found target and tracks progress', () => {
+    const s = pcSession(seq(0))
+    s.next() // pc 0, targets a,b
+    const res = s.submit('a')
+    expect(res.outcome).toBe('found')
+    expect(res.justCompleted).toBe(false)
+    expect(res.progress).toEqual({ found: 1, total: 2, mistakes: 0, complete: false })
+    expect(s.foundKeys).toEqual(['a'])
+  })
+
+  it('treats an already-found target as a no-op', () => {
+    const s = pcSession(seq(0))
+    s.next()
+    s.submit('a')
+    const again = s.submit('a')
+    expect(again.outcome).toBe('already')
+    expect(again.progress.found).toBe(1)
+    expect(again.progress.mistakes).toBe(0)
+  })
+
+  it('counts a non-target click as a mistake without un-finding anything', () => {
+    const s = pcSession(seq(0))
+    s.next()
+    s.submit('a')
+    const wrong = s.submit('z')
+    expect(wrong.outcome).toBe('wrong')
+    expect(wrong.progress).toEqual({ found: 1, total: 2, mistakes: 1, complete: false })
+  })
+
+  it('completes the round and flags justCompleted only once', () => {
+    const s = pcSession(seq(0))
+    s.next() // pc 0, targets a,b
+    expect(s.submit('a').justCompleted).toBe(false)
+    const done = s.submit('b')
+    expect(done.justCompleted).toBe(true)
+    expect(done.progress.complete).toBe(true)
+    expect(s.isComplete).toBe(true)
+    // Extra clicks after completion neither re-complete nor add mistakes.
+    const after = s.submit('z')
+    expect(after.justCompleted).toBe(false)
+    expect(after.progress.mistakes).toBe(0)
+  })
+
+  it('counts a clean round toward the streak', () => {
+    const s = pcSession(seq(0))
+    s.next()
+    s.submit('a')
+    s.submit('b')
+    expect(s.stats).toMatchObject({ answered: 1, correct: 1, incorrect: 0, streak: 1, bestStreak: 1 })
+  })
+
+  it('a round with any mistake completes but breaks the streak', () => {
+    const s = pcSession(seq(0))
+    s.next() // pc 0
+    s.submit('a')
+    s.submit('b') // clean -> streak 1
+    s.next() // pc 1, target c
+    s.submit('z') // mistake
+    s.submit('c') // completes with a mistake
+    expect(s.stats).toMatchObject({ answered: 2, correct: 1, incorrect: 1, streak: 0, bestStreak: 1 })
+  })
+
+  it('a single-target round completes in one correct click', () => {
+    const s = pcSession(seq(0))
+    s.next() // pc 0
+    s.submit('a')
+    s.submit('b')
+    s.next() // pc 1, single target c
+    const done = s.submit('c')
+    expect(done.justCompleted).toBe(true)
+  })
+
+  it('reset() clears rounds and current question', () => {
+    const s = pcSession(seq(0))
+    s.next()
+    s.submit('a')
+    s.reset()
+    expect(s.current).toBeNull()
+    expect(s.foundKeys).toEqual([])
     expect(s.stats).toEqual(emptyStats())
   })
 })

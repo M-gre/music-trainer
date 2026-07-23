@@ -16,7 +16,7 @@ import { fretMidi, type Tuning } from './theory/instruments.ts'
 import { pickAvoiding, type Rng } from './quiz.ts'
 import { Store, type StorageBackend } from './storage.ts'
 
-export type QuizMode = 'find' | 'name'
+export type QuizMode = 'find' | 'name' | 'findAll'
 
 /** "Find the note" question: name a pitch class on a specific string. */
 export interface FindQuestion {
@@ -36,7 +36,24 @@ export interface NameQuestion {
   pc: PitchClass
 }
 
-export type TrainerQuestion = FindQuestion | NameQuestion
+/** A concrete board position (string + fret). */
+export interface Position {
+  string: number
+  fret: number
+}
+
+/**
+ * "Find all instances" question: name a pitch class; every matching position
+ * across the included strings and fret range must be clicked.
+ */
+export interface FindAllQuestion {
+  mode: 'findAll'
+  pc: PitchClass
+  /** Every position (string, fret) in range whose pitch class is `pc` (>= 1). */
+  targets: Position[]
+}
+
+export type TrainerQuestion = FindQuestion | NameQuestion | FindAllQuestion
 
 /** A player's answer: a clicked board position (find) or a chosen pc (name). */
 export type TrainerAnswer =
@@ -76,6 +93,26 @@ export function possibleQuestions(ctx: QuestionContext): TrainerQuestion[] {
   for (let f = from; f <= to; f++) frets.push(f)
 
   const questions: TrainerQuestion[] = []
+
+  if (ctx.mode === 'findAll') {
+    // One question per pitch class present anywhere in range; its targets are
+    // every matching position across all included strings.
+    const byPc = new Map<PitchClass, Position[]>()
+    for (const string of ctx.includedStrings) {
+      for (const fret of frets) {
+        const pc = midiToPc(fretMidi(ctx.tuning, string, fret))
+        const list = byPc.get(pc)
+        if (list) list.push({ string, fret })
+        else byPc.set(pc, [{ string, fret }])
+      }
+    }
+    for (let pc = 0; pc < 12; pc++) {
+      const targets = byPc.get(pc)
+      if (targets && targets.length > 0) questions.push({ mode: 'findAll', pc, targets })
+    }
+    return questions
+  }
+
   for (const string of ctx.includedStrings) {
     if (ctx.mode === 'name') {
       for (const fret of frets) {
@@ -99,10 +136,21 @@ export function possibleQuestions(ctx: QuestionContext): TrainerQuestion[] {
   return questions
 }
 
+/** Stable key for a board position, used by the find-all session. */
+export function positionKey(string: number, fret: number): string {
+  return `${string}:${fret}`
+}
+
+/** Target keys (every matching position) for a find-all question. */
+export function findAllTargetKeys(question: FindAllQuestion): string[] {
+  return question.targets.map((p) => positionKey(p.string, p.fret))
+}
+
 /** Identity for immediate-repeat avoidance: same target, ignoring fret lists. */
 function sameQuestion(a: TrainerQuestion, b: TrainerQuestion): boolean {
   if (a.mode === 'find' && b.mode === 'find') return a.string === b.string && a.pc === b.pc
   if (a.mode === 'name' && b.mode === 'name') return a.string === b.string && a.fret === b.fret
+  if (a.mode === 'findAll' && b.mode === 'findAll') return a.pc === b.pc
   return false
 }
 
@@ -161,7 +209,7 @@ export function normalizeTrainerSettings(value: unknown): FretboardTrainerSettin
   const v = (typeof value === 'object' && value !== null ? value : {}) as Partial<
     Record<keyof FretboardTrainerSettings, unknown>
   >
-  const mode: QuizMode = v.mode === 'name' ? 'name' : 'find'
+  const mode: QuizMode = v.mode === 'name' ? 'name' : v.mode === 'findAll' ? 'findAll' : 'find'
   const from = clampFret(v.fromFret, DEFAULT_TRAINER_SETTINGS.fromFret)
   const toRaw = clampFret(v.toFret, DEFAULT_TRAINER_SETTINGS.toFret)
   const toFret = Math.max(from, toRaw)
@@ -198,8 +246,11 @@ export function createTrainerSettingsStore(
   return new Store<FretboardTrainerSettings>(
     {
       key: 'settings:fretboard-trainer',
-      version: 1,
+      // v2 added the 'findAll' quiz mode; the shape is otherwise unchanged, so
+      // old data just re-normalizes cleanly.
+      version: 2,
       defaultValue: DEFAULT_TRAINER_SETTINGS,
+      migrate: (oldData) => normalizeTrainerSettings(oldData),
     },
     backend,
   )

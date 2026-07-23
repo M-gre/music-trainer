@@ -17,7 +17,7 @@ import { midiToPc, type PitchClass } from './theory/notes.ts'
 import { pickAvoiding, type Rng } from './quiz.ts'
 import { Store, type StorageBackend } from './storage.ts'
 
-export type QuizMode = 'find' | 'name'
+export type QuizMode = 'find' | 'name' | 'findAll'
 
 /** "Find the note" question: name a pitch class anywhere in the visible range. */
 export interface FindQuestion {
@@ -35,7 +35,18 @@ export interface NameQuestion {
   pc: PitchClass
 }
 
-export type TrainerQuestion = FindQuestion | NameQuestion
+/**
+ * "Find all instances" question: name a pitch class; every matching key
+ * (every octave) in the visible range must be clicked.
+ */
+export interface FindAllQuestion {
+  mode: 'findAll'
+  pc: PitchClass
+  /** Every midi key in range whose pitch class is `pc` (>= 1). */
+  targets: number[]
+}
+
+export type TrainerQuestion = FindQuestion | NameQuestion | FindAllQuestion
 
 /** A player's answer: a clicked key (find) or a chosen pitch class (name). */
 export type TrainerAnswer = { kind: 'key'; midi: number } | { kind: 'pc'; pc: PitchClass }
@@ -74,16 +85,24 @@ export function possibleQuestions(ctx: QuestionContext): TrainerQuestion[] {
     for (const midi of midis) {
       questions.push({ mode: 'name', midi, pc: midiToPc(midi) })
     }
-  } else {
-    // Group keys by pitch class so each pc is one question that accepts any
-    // of its keys in range.
-    const byPc = new Map<PitchClass, number[]>()
-    for (const midi of midis) {
-      const pc = midiToPc(midi)
-      const list = byPc.get(pc)
-      if (list) list.push(midi)
-      else byPc.set(pc, [midi])
+    return questions
+  }
+
+  // Group keys by pitch class so each pc is one question that accepts any of
+  // its keys in range (shared by 'find' and 'findAll').
+  const byPc = new Map<PitchClass, number[]>()
+  for (const midi of midis) {
+    const pc = midiToPc(midi)
+    const list = byPc.get(pc)
+    if (list) list.push(midi)
+    else byPc.set(pc, [midi])
+  }
+  if (ctx.mode === 'findAll') {
+    for (let pc = 0; pc < 12; pc++) {
+      const targets = byPc.get(pc)
+      if (targets && targets.length > 0) questions.push({ mode: 'findAll', pc, targets })
     }
+  } else {
     for (const [pc, answerMidis] of byPc) {
       questions.push({ mode: 'find', pc, answerMidis })
     }
@@ -91,10 +110,21 @@ export function possibleQuestions(ctx: QuestionContext): TrainerQuestion[] {
   return questions
 }
 
+/** Stable key for a keyboard key, used by the find-all session. */
+export function keyKey(midi: number): string {
+  return String(midi)
+}
+
+/** Target keys (every matching key) for a find-all question. */
+export function findAllTargetKeys(question: FindAllQuestion): string[] {
+  return question.targets.map(keyKey)
+}
+
 /** Identity for immediate-repeat avoidance: same target, ignoring key lists. */
 function sameQuestion(a: TrainerQuestion, b: TrainerQuestion): boolean {
   if (a.mode === 'find' && b.mode === 'find') return a.pc === b.pc
   if (a.mode === 'name' && b.mode === 'name') return a.midi === b.midi
+  if (a.mode === 'findAll' && b.mode === 'findAll') return a.pc === b.pc
   return false
 }
 
@@ -153,7 +183,7 @@ export function normalizeTrainerSettings(value: unknown): KeyboardTrainerSetting
   const v = (typeof value === 'object' && value !== null ? value : {}) as Partial<
     Record<keyof KeyboardTrainerSettings, unknown>
   >
-  const mode: QuizMode = v.mode === 'name' ? 'name' : 'find'
+  const mode: QuizMode = v.mode === 'name' ? 'name' : v.mode === 'findAll' ? 'findAll' : 'find'
   const fromOctave = clampOctave(v.fromOctave, DEFAULT_KEYBOARD_TRAINER_SETTINGS.fromOctave)
   const toRaw = clampOctave(v.toOctave, DEFAULT_KEYBOARD_TRAINER_SETTINGS.toOctave)
   const toOctave = Math.max(fromOctave, toRaw)
@@ -168,8 +198,11 @@ export function createKeyboardTrainerSettingsStore(
   return new Store<KeyboardTrainerSettings>(
     {
       key: 'settings:keyboard-trainer',
-      version: 1,
+      // v2 added the 'findAll' quiz mode; the shape is otherwise unchanged, so
+      // old data just re-normalizes cleanly.
+      version: 2,
       defaultValue: DEFAULT_KEYBOARD_TRAINER_SETTINGS,
+      migrate: (oldData) => normalizeTrainerSettings(oldData),
     },
     backend,
   )

@@ -3,11 +3,14 @@ import {
   checkAnswer,
   createTrainerSettingsStore,
   DEFAULT_TRAINER_SETTINGS,
+  findAllTargetKeys,
   generateQuestion,
   MAX_FRET,
   normalizeTrainerSettings,
+  positionKey,
   possibleQuestions,
   resolveIncludedStrings,
+  type FindAllQuestion,
   type FindQuestion,
   type NameQuestion,
   type QuestionContext,
@@ -98,7 +101,7 @@ describe('possibleQuestions', () => {
 
   it('respects the included-strings filter', () => {
     const qs = possibleQuestions(ctx({ mode: 'name', includedStrings: [2] }))
-    expect(qs.every((q) => q.string === 2)).toBe(true)
+    expect(qs.every((q) => q.mode === 'name' && q.string === 2)).toBe(true)
   })
 
   it('handles a reversed range by normalizing from/to', () => {
@@ -107,7 +110,55 @@ describe('possibleQuestions', () => {
   })
 })
 
+describe('possibleQuestions (findAll)', () => {
+  it('yields one question per pitch class present in range, in pc order', () => {
+    const qs = possibleQuestions(
+      ctx({ mode: 'findAll', fromFret: 0, toFret: 11, includedStrings: [0] }),
+    ) as FindAllQuestion[]
+    // A single string spanning 12 frets covers all 12 pitch classes once.
+    expect(qs).toHaveLength(12)
+    expect(qs.map((q) => q.pc)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    expect(qs.every((q) => q.mode === 'findAll')).toBe(true)
+  })
+
+  it('collects every matching position across all included strings', () => {
+    // E open on string 0 (E1) and string-3 fret 9 (G2 + 9 = E3) both are E (pc 4).
+    const qs = possibleQuestions(
+      ctx({ mode: 'findAll', fromFret: 0, toFret: 12, includedStrings: [0, 1, 2, 3] }),
+    ) as FindAllQuestion[]
+    const e = qs.find((q) => q.pc === 4)!
+    // Every target genuinely has pitch class E.
+    for (const t of e.targets) {
+      expect(midiToPc(bass4.strings[t.string]! + t.fret)).toBe(4)
+    }
+    // Includes the open low-E string at fret 0 and its octave at fret 12.
+    expect(e.targets).toContainEqual({ string: 0, fret: 0 })
+    expect(e.targets).toContainEqual({ string: 0, fret: 12 })
+  })
+
+  it('findAllTargetKeys matches positionKey encoding of the targets', () => {
+    const q: FindAllQuestion = {
+      mode: 'findAll',
+      pc: 4,
+      targets: [
+        { string: 0, fret: 0 },
+        { string: 0, fret: 12 },
+      ],
+    }
+    expect(findAllTargetKeys(q)).toEqual([positionKey(0, 0), positionKey(0, 12)])
+    expect(positionKey(2, 5)).toBe('2:5')
+  })
+})
+
 describe('generateQuestion', () => {
+  it('generates and avoids repeats in findAll mode', () => {
+    const c = ctx({ mode: 'findAll', fromFret: 0, toFret: 11, includedStrings: [0] })
+    const prev: TrainerQuestion = { mode: 'findAll', pc: 0, targets: [{ string: 0, fret: 0 }] }
+    const next = generateQuestion(c, prev, seq(0)) as FindAllQuestion
+    expect(next.mode).toBe('findAll')
+    expect(next.pc).not.toBe(0)
+  })
+
   it('is deterministic for a given rng', () => {
     const c = ctx({ mode: 'name', fromFret: 0, toFret: 2, includedStrings: [0] })
     const a = generateQuestion(c, null, seq(0))
@@ -170,6 +221,7 @@ describe('normalizeTrainerSettings', () => {
 
   it('validates mode and accidentals', () => {
     expect(normalizeTrainerSettings({ mode: 'name' }).mode).toBe('name')
+    expect(normalizeTrainerSettings({ mode: 'findAll' }).mode).toBe('findAll')
     expect(normalizeTrainerSettings({ mode: 'bogus' }).mode).toBe('find')
     expect(normalizeTrainerSettings({ accidentals: 'flat' }).accidentals).toBe('flat')
     expect(normalizeTrainerSettings({ accidentals: 'x' }).accidentals).toBe('sharp')
@@ -189,8 +241,21 @@ describe('trainer settings store', () => {
 
   it('round-trips settings across store instances sharing a backend', () => {
     const backend = memoryBackend()
-    const written = { ...DEFAULT_TRAINER_SETTINGS, mode: 'name' as const, toFret: 5 }
+    const written = { ...DEFAULT_TRAINER_SETTINGS, mode: 'findAll' as const, toFret: 5 }
     createTrainerSettingsStore(backend).set(written)
     expect(createTrainerSettingsStore(backend).get()).toEqual(written)
+  })
+
+  it('migrates v1 data by normalizing it', () => {
+    const backend = memoryBackend()
+    // Simulate data persisted under the old schema version.
+    backend.setItem(
+      'mt:settings:fretboard-trainer',
+      JSON.stringify({ v: 1, data: { mode: 'name', fromFret: 3, toFret: 20 } }),
+    )
+    const migrated = createTrainerSettingsStore(backend).get()
+    expect(migrated.mode).toBe('name')
+    expect(migrated.fromFret).toBe(3)
+    expect(migrated.toFret).toBe(20)
   })
 })
