@@ -70,7 +70,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 - [x] Practice dashboard: streaks, per-tool stats, suggested daily routine
 - [ ] Spaced repetition for all quiz tools (shared lib)
-- [ ] PWA manifest + service worker for full offline use (self-contained, CSP-compatible)
+- [x] PWA manifest + service worker for full offline use (self-contained, CSP-compatible)
 - [ ] Keyboard shortcuts for quiz answering; accessibility pass (focus, ARIA, contrast)
 - [ ] Mobile/touch audit: 44px minimum tap targets on fretboard/keyboard hit areas, remove hover-only affordances, touch-action on controls, verify each tool at 390px width
 - [ ] Visual overlap audit: screenshot every tool (desktop + 390px) and fix overlapping/colliding elements — known offenders: fretboard marker dots covering fret numbers and inlay dots, keyboard octave labels (C3/C4…) hidden behind marker dots on white keys; establish spacing rules (labels never under markers, numbers in reserved gutters) in the shared components so all tools inherit the fix

@@ -1,0 +1,24 @@
+{
+  "name": "Music Trainer",
+  "short_name": "Music Trainer",
+  "description": "Practice tools for bass, guitar and piano: note reading, ear training, dexterity drills, metronome and play-alongs.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#14161a",
+  "theme_color": "#14161a",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
