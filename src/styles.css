@@ -207,6 +207,22 @@ a.tool-card:hover {
   fill: var(--text-dim);
 }
 
+.fb-dot-correct circle {
+  fill: #3fae6b;
+}
+
+.fb-dot-correct text {
+  fill: var(--bg);
+}
+
+.fb-dot-incorrect circle {
+  fill: #b8433a;
+}
+
+.fb-dot-incorrect text {
+  fill: var(--text);
+}
+
 /* ---- Keyboard SVG component ---- */
 
 .kb-keyboard {
@@ -558,4 +574,123 @@ a.tool-card:hover {
 
 .mn-tap:active {
   background: var(--bg-hover);
+}
+
+/* ---- Fretboard Note Trainer ---- */
+
+.fnt-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.5rem;
+  padding: 0.75rem 1rem;
+  text-align: center;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.fnt-prompt-text {
+  font-size: 1.15rem;
+}
+
+.fnt-target {
+  color: var(--accent);
+  font-size: 1.3rem;
+}
+
+.fnt-prompt-feedback {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.fnt-correct {
+  color: #3fae6b;
+}
+
+.fnt-wrong {
+  color: #e07a72;
+}
+
+.fnt-note-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+}
+
+.fnt-note-btn {
+  min-height: 3rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fnt-note-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.fnt-note-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.fnt-note-correct {
+  color: var(--bg);
+  background: #3fae6b;
+  border-color: #3fae6b;
+  opacity: 1;
+}
+
+.fnt-note-wrong {
+  color: var(--text);
+  background: #b8433a;
+  border-color: #b8433a;
+  opacity: 1;
+}
+
+.fnt-score {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.fnt-score-item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.8rem 0.5rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.fnt-score-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.fnt-score-sep {
+  color: var(--text-dim);
+  margin: 0 0.1rem;
+}
+
+.fnt-score-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+@media (max-width: 480px) {
+  .fnt-note-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }

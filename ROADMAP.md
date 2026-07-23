@@ -19,7 +19,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 ## M1 — Note learning
 
-- [ ] Fretboard Note Trainer: "find note X on string Y" and "name the highlighted fret" quiz modes, fret-range and string filters, score streak, uses Fretboard component with the selected instrument/tuning (bass or guitar)
+- [x] Fretboard Note Trainer: "find note X on string Y" and "name the highlighted fret" quiz modes, fret-range and string filters, score streak, uses Fretboard component with the selected instrument/tuning (bass or guitar)
 - [ ] Keyboard Note Trainer: same quiz modes on the Keyboard component
 - [ ] Progress stats per note (accuracy, response time) persisted via storage lib; weakest-notes-first question picking
 - [ ] Note Reading: render single notes on a staff (SVG, bass + treble clef), answer via fretboard/keyboard/name buttons, ledger lines, key-signature-aware naming

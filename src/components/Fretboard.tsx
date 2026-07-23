@@ -26,7 +26,7 @@ import {
 } from './fretboardGeometry.ts'
 
 /** Visual kind of a marker, mapped to a CSS class. */
-export type MarkerVariant = 'default' | 'root' | 'accent' | 'dim'
+export type MarkerVariant = 'default' | 'root' | 'accent' | 'dim' | 'correct' | 'incorrect'
 
 /** A highlighted note position on the board. */
 export interface FretboardMarker {
