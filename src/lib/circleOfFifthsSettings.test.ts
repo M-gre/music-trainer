@@ -24,11 +24,23 @@ describe('clampCircleIndex', () => {
 
 describe('normalizeCircleOfFifthsSettings', () => {
   it('passes through a valid value', () => {
-    expect(normalizeCircleOfFifthsSettings({ selectedIndex: 7 })).toEqual({ selectedIndex: 7 })
+    expect(normalizeCircleOfFifthsSettings({ selectedIndex: 7, scaleView: 'minor' })).toEqual({
+      selectedIndex: 7,
+      scaleView: 'minor',
+    })
   })
 
   it('clamps an out-of-range index', () => {
-    expect(normalizeCircleOfFifthsSettings({ selectedIndex: 99 })).toEqual({ selectedIndex: 11 })
+    expect(normalizeCircleOfFifthsSettings({ selectedIndex: 99 })).toEqual({
+      selectedIndex: 11,
+      scaleView: 'major',
+    })
+  })
+
+  it('rejects an invalid scale view', () => {
+    expect(normalizeCircleOfFifthsSettings({ scaleView: 'dorian' }).scaleView).toBe(
+      DEFAULT_CIRCLE_OF_FIFTHS_SETTINGS.scaleView,
+    )
   })
 
   it('falls back entirely for non-object input', () => {
@@ -45,7 +57,7 @@ describe('circle of fifths settings store', () => {
 
   it('round-trips settings across store instances sharing a backend', () => {
     const backend = memoryBackend()
-    const value = { selectedIndex: 9 }
+    const value = { selectedIndex: 9, scaleView: 'minor' as const }
     createCircleOfFifthsSettingsStore(backend).set(value)
     expect(createCircleOfFifthsSettingsStore(backend).get()).toEqual(value)
   })

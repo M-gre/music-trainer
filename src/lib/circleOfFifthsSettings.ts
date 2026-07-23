@@ -13,10 +13,13 @@ import { CIRCLE_SEGMENT_COUNT } from '../components/circleGeometry.ts'
 export interface CircleOfFifthsSettings {
   /** Selected circle position, 0–11 (0 = C). */
   selectedIndex: number
+  /** Which scale the instrument views (fretboard/keyboard) highlight: the key's major scale or its relative natural minor. */
+  scaleView: 'major' | 'minor'
 }
 
 export const DEFAULT_CIRCLE_OF_FIFTHS_SETTINGS: CircleOfFifthsSettings = {
   selectedIndex: 0,
+  scaleView: 'major',
 }
 
 /** Clamp/round a selected index into the valid `[0, CIRCLE_SEGMENT_COUNT)` range. */
@@ -39,7 +42,11 @@ export function normalizeCircleOfFifthsSettings(value: unknown): CircleOfFifthsS
     typeof v.selectedIndex === 'number'
       ? clampCircleIndex(v.selectedIndex)
       : DEFAULT_CIRCLE_OF_FIFTHS_SETTINGS.selectedIndex
-  return { selectedIndex }
+  const scaleView: CircleOfFifthsSettings['scaleView'] =
+    v.scaleView === 'major' || v.scaleView === 'minor'
+      ? v.scaleView
+      : DEFAULT_CIRCLE_OF_FIFTHS_SETTINGS.scaleView
+  return { selectedIndex, scaleView }
 }
 
 /** Build a circle-of-fifths-settings store (tests pass `memoryBackend()`). */
