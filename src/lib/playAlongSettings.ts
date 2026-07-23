@@ -38,6 +38,10 @@ export interface PlayAlongSettings {
   countIn: boolean
   /** Master output volume, 0..1. */
   masterVolume: number
+  /** Drum-bus mix level, 0..1 — the drums' level under the master volume. */
+  drumVolume: number
+  /** Accompaniment (comp) mix level, 0..1 — sits under the drums by default. */
+  accompanimentVolume: number
   /** Voices the user has muted, in `DRUM_VOICES` order (deduped, validated). */
   mutedVoices: DrumVoice[]
   /** Chord-progression accompaniment (comping voice) settings. */
@@ -75,6 +79,17 @@ function clampVolume(volume: number): number {
   return Math.min(1, Math.max(0, volume))
 }
 
+/** Default mix level for the drum bus (the backbone — full level). */
+export const DEFAULT_DRUM_VOLUME = 1
+/** Default mix level for the accompaniment (sits under the drums). */
+export const DEFAULT_ACCOMPANIMENT_VOLUME = 0.7
+
+/** Clamp a mix scalar into 0..1; NaN falls back to `fallback`. */
+function clampMixVolume(volume: number, fallback: number): number {
+  if (Number.isNaN(volume)) return fallback
+  return Math.min(1, Math.max(0, volume))
+}
+
 /**
  * The drum voices a groove actually plays, in `DRUM_VOICES` order — the set the
  * mute row renders a chip for. Derived from the groove's (partial) track map so
@@ -97,6 +112,8 @@ export const DEFAULT_PLAY_ALONG_SETTINGS: PlayAlongSettings = {
   bpm: DEFAULT_PLAY_ALONG_TEMPO,
   countIn: true,
   masterVolume: DEFAULT_MASTER_VOLUME,
+  drumVolume: DEFAULT_DRUM_VOLUME,
+  accompanimentVolume: DEFAULT_ACCOMPANIMENT_VOLUME,
   mutedVoices: [],
   accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
   showChordTones: true,
@@ -123,6 +140,14 @@ export function normalizePlayAlongSettings(value: unknown): PlayAlongSettings {
       typeof v.masterVolume === 'number'
         ? clampVolume(v.masterVolume)
         : DEFAULT_PLAY_ALONG_SETTINGS.masterVolume,
+    drumVolume:
+      typeof v.drumVolume === 'number'
+        ? clampMixVolume(v.drumVolume, DEFAULT_DRUM_VOLUME)
+        : DEFAULT_PLAY_ALONG_SETTINGS.drumVolume,
+    accompanimentVolume:
+      typeof v.accompanimentVolume === 'number'
+        ? clampMixVolume(v.accompanimentVolume, DEFAULT_ACCOMPANIMENT_VOLUME)
+        : DEFAULT_PLAY_ALONG_SETTINGS.accompanimentVolume,
     mutedVoices: normalizeMutedVoices(v.mutedVoices),
     accompaniment: normalizeAccompanimentSettings(v.accompaniment),
     showChordTones:
@@ -143,12 +168,13 @@ export function createPlayAlongSettingsStore(backend?: StorageBackend): Store<Pl
       key: 'settings:play-along',
       // v2 added the chord-progression accompaniment block; v3 added the
       // `showChordTones` fretboard-panel toggle; v4 added the `tempoTrainer`
-      // auto-increase config.
-      version: 4,
+      // auto-increase config; v5 added the `drumVolume` / `accompanimentVolume`
+      // mix levels.
+      version: 5,
       defaultValue: DEFAULT_PLAY_ALONG_SETTINGS,
       // Older data lacks the newer fields; normalizing fills them (and every
-      // other field) from the defaults, so a v1/v2/v3 -> v4 upgrade never loses
-      // existing drum or accompaniment prefs.
+      // other field) from the defaults, so a v1/v2/v3/v4 -> v5 upgrade never
+      // loses existing drum or accompaniment prefs.
       migrate: (oldData) => normalizePlayAlongSettings(oldData),
     },
     backend,

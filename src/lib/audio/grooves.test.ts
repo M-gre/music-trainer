@@ -267,12 +267,13 @@ interface TriggeredHit {
   voice: DrumVoice
   when: number
   velocity: number | undefined
+  gain: number | undefined
 }
 
 class FakeKit implements DrumTrigger {
   hits: TriggeredHit[] = []
   playDrum(voice: DrumVoice, opts: PlayDrumOptions): void {
-    this.hits.push({ voice, when: opts.when ?? 0, velocity: opts.velocity })
+    this.hits.push({ voice, when: opts.when ?? 0, velocity: opts.velocity, gain: opts.gain })
   }
 }
 
@@ -352,7 +353,7 @@ describe('GroovePlayer playback', () => {
     transport.emit(pos(0, 0, 0), 1.5) // beat 1: kick
     transport.emit(pos(0, 1, 0), 2.0) // beat 2: snare (+ hat)
     const kick = kit.hits.find((h) => h.voice === 'kick')
-    expect(kick).toEqual({ voice: 'kick', when: 1.5, velocity: 0.9 })
+    expect(kick).toEqual({ voice: 'kick', when: 1.5, velocity: 0.9, gain: 1 })
     expect(kit.hits.some((h) => h.voice === 'snare' && h.when === 2.0)).toBe(true)
   })
 
@@ -428,6 +429,33 @@ describe('GroovePlayer playback', () => {
     player.setCountIn({ bars: 0 })
     expect(player.countInBars).toBe(0)
   })
+
+  it('passes the drum-bus volume as a gain scalar on every hit', () => {
+    const { player, kit, transport } = makePlayer({
+      groove: getGroove('rock-8ths'),
+      countIn: { bars: 0 },
+      drumVolume: 0.5,
+    })
+    expect(player.volume).toBe(0.5)
+    player.start()
+    transport.emit(pos(0, 0, 0), 0)
+    expect(kit.hits.length).toBeGreaterThan(0)
+    for (const hit of kit.hits) expect(hit.gain).toBe(0.5)
+    // Live change takes effect on the next event.
+    player.setVolume(0.2)
+    kit.hits.length = 0
+    transport.emit(pos(1, 0, 0), 1)
+    for (const hit of kit.hits) expect(hit.gain).toBe(0.2)
+  })
+
+  it('defaults the drum-bus volume to 1 and clamps out-of-range values', () => {
+    const { player } = makePlayer()
+    expect(player.volume).toBe(1)
+    player.setVolume(5)
+    expect(player.volume).toBe(1)
+    player.setVolume(-1)
+    expect(player.volume).toBe(0)
+  })
 })
 
 // --- Registry ----------------------------------------------------------------
@@ -442,16 +470,60 @@ describe('groove registry', () => {
     expect(getGroove('funk').id).toBe('funk')
     expect(getGroove('missing').id).toBe(DEFAULT_GROOVE.id)
   })
-  it('ships all seven roadmap grooves', () => {
+  it('ships every groove in picker order', () => {
     expect(GROOVES.map((g) => g.id)).toEqual([
       'rock-8ths',
       'rock-16ths',
       'funk',
+      'funk-16',
       'swing',
       'bossa',
       'blues-12-8',
       'half-time',
+      'half-time-shuffle',
+      'disco',
+      'motown',
+      'reggae-one-drop',
+      'train-beat',
     ])
+  })
+})
+
+// --- New grooves (feel checks) ----------------------------------------------
+
+describe('added grooves', () => {
+  it('disco is four-on-the-floor with open-hat offbeats', () => {
+    const g = getGroove('disco')
+    const kick = g.tracks.kick ?? []
+    // Kick on every quarter (steps 0,4,8,12 of a 16th bar).
+    expect([0, 4, 8, 12].every((i) => (kick[i] ?? 0) > 0)).toBe(true)
+    const open = g.tracks['hat-open'] ?? []
+    // Open hat on the eighth-note offbeats (steps 2,6,10,14).
+    expect([2, 6, 10, 14].every((i) => (open[i] ?? 0) > 0)).toBe(true)
+  })
+
+  it('reggae one-drop leaves beat 1 empty and hits kick + snare on beat 3', () => {
+    const g = getGroove('reggae-one-drop')
+    const kick = g.tracks.kick ?? []
+    const snare = g.tracks.snare ?? []
+    expect(kick[0]).toBe(0) // the "drop": no downbeat kick
+    expect(kick[8]).toBeGreaterThan(0) // beat 3
+    expect(snare[8]).toBeGreaterThan(0) // snare with the kick on 3
+  })
+
+  it('half-time shuffle rides a triplet grid with a beat-3 backbeat', () => {
+    const g = getGroove('half-time-shuffle')
+    expect(g.subdivision).toBe('triplet')
+    expect(grooveBeatsPerBar(g)).toBe(4)
+    // Backbeat on beat 3 (step 6 on a 12-step triplet bar) is the loudest snare.
+    const snare = g.tracks.snare ?? []
+    expect(snare[6]).toBeGreaterThan(0.5)
+  })
+
+  it('16th funk drives busier than the base funk kick', () => {
+    const funk = (getGroove('funk').tracks.kick ?? []).filter((s) => s > 0).length
+    const funk16 = (getGroove('funk-16').tracks.kick ?? []).filter((s) => s > 0).length
+    expect(funk16).toBeGreaterThan(funk)
   })
 })
 

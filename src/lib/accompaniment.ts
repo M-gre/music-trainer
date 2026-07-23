@@ -219,61 +219,183 @@ export function barToChordIndex(
 
 // --- Comping voice ------------------------------------------------------------
 
-/** Comping style: a sustained pad (one chord per bar) or beat-by-beat stabs. */
-export type CompStyle = 'pad' | 'stabs'
-export const COMP_STYLES: readonly CompStyle[] = ['pad', 'stabs']
+/**
+ * Comping style:
+ *  - `pad`      — one sustained chord per bar (held the whole bar);
+ *  - `stabs`    — short full-chord hits on every beat head;
+ *  - `arpeggio` — the voicing broken into ascending eighth notes, one note per hit;
+ *  - `offbeat`  — short full-chord skanks on the "&" of each beat (reggae/ska);
+ *  - `block`    — block chords on the half-note pulse (beats 1 & 3), medium sustain.
+ */
+export type CompStyle = 'pad' | 'stabs' | 'arpeggio' | 'offbeat' | 'block'
+export const COMP_STYLES: readonly CompStyle[] = ['pad', 'stabs', 'arpeggio', 'offbeat', 'block']
 
+const COMP_STYLE_SET = new Set<string>(COMP_STYLES)
 export function isCompStyle(value: unknown): value is CompStyle {
-  return value === 'pad' || value === 'stabs'
+  return typeof value === 'string' && COMP_STYLE_SET.has(value)
+}
+
+/** Human-facing label for each comping style (Play-Along style picker). */
+export const COMP_STYLE_LABELS: Record<CompStyle, string> = {
+  pad: 'Pad',
+  stabs: 'Stabs',
+  arpeggio: 'Arpeggio',
+  offbeat: 'Offbeat',
+  block: 'Block',
 }
 
 /**
- * Whether a comp chord fires at this grid position under the given style. A pad
- * fires once per bar (the downbeat); stabs fire on every beat head. Off-beat
- * subdivisions never trigger the comp.
+ * The subdivision index of the beat's mid-point ("&") for an even grid, or
+ * `null` on an odd grid (e.g. a triplet groove) where no eighth-note "&"
+ * exists. Used by the off-beat-based styles.
  */
-export function compTriggersAt(position: GridPosition, style: CompStyle): boolean {
-  if (position.subdivision !== 0) return false
-  return style === 'pad' ? position.beat === 0 : true
+export function beatMidpoint(subdivisionsPerBeat: number): number | null {
+  const subs = Math.max(1, Math.floor(subdivisionsPerBeat))
+  return subs % 2 === 0 ? subs / 2 : null
+}
+
+/**
+ * Whether a comp chord fires at this grid position under the given style, for a
+ * grid with `subdivisionsPerBeat` steps per beat (default 2, i.e. eighths):
+ *  - `pad`      — the bar downbeat only;
+ *  - `stabs`    — every beat head;
+ *  - `block`    — beat heads of the even beats (1 & 3 …), a half-note pulse;
+ *  - `offbeat`  — the beat mid-point ("&") only; silent on odd/triplet grids;
+ *  - `arpeggio` — every eighth note (beat head and the "&"); the beat head only
+ *                 on odd/triplet grids.
+ */
+export function compTriggersAt(
+  position: GridPosition,
+  style: CompStyle,
+  subdivisionsPerBeat = 2,
+): boolean {
+  const mid = beatMidpoint(subdivisionsPerBeat)
+  switch (style) {
+    case 'pad':
+      return position.subdivision === 0 && position.beat === 0
+    case 'stabs':
+      return position.subdivision === 0
+    case 'block':
+      return position.subdivision === 0 && position.beat % 2 === 0
+    case 'offbeat':
+      return mid !== null && position.subdivision === mid
+    case 'arpeggio':
+      return position.subdivision === 0 || (mid !== null && position.subdivision === mid)
+  }
+}
+
+/**
+ * The notes to play at this position: the whole voicing for the chordal styles,
+ * or a single ascending-cycling note for `arpeggio`. The arpeggio walks the
+ * voicing low→high across the bar's eighth-note slots (two per beat), wrapping
+ * when it runs past the top note, so a triad becomes a rolling R-3-5-R-… figure.
+ * Pure — the position alone fixes which note sounds, so it stays in sync with
+ * the drums without any running counter.
+ */
+export function compNoteSelection(
+  position: GridPosition,
+  style: CompStyle,
+  voicing: readonly Midi[],
+  subdivisionsPerBeat = 2,
+): Midi[] {
+  if (style !== 'arpeggio') return [...voicing]
+  if (voicing.length === 0) return []
+  const mid = beatMidpoint(subdivisionsPerBeat)
+  const isOffbeat = mid !== null && position.subdivision === mid
+  const eighthSlot = position.beat * 2 + (isOffbeat ? 1 : 0)
+  const idx = ((eighthSlot % voicing.length) + voicing.length) % voicing.length
+  return [voicing[idx]!]
 }
 
 /** How long a comp chord is gated, in seconds. */
 export function compChordDuration(style: CompStyle, beatsPerBar: number, bpm: number): number {
   const secondsPerBeat = 60 / (bpm > 0 ? bpm : 120)
-  if (style === 'pad') return secondsPerBeat * Math.max(1, beatsPerBar)
-  return secondsPerBeat * 0.6
+  switch (style) {
+    case 'pad':
+      return secondsPerBeat * Math.max(1, beatsPerBar)
+    case 'block':
+      return secondsPerBeat * 1.5 // ~a dotted quarter — a detached block chord
+    case 'arpeggio':
+      return secondsPerBeat * 0.5 // an eighth note, notes ringing into each other
+    case 'offbeat':
+      return secondsPerBeat * 0.28 // a tight skank
+    case 'stabs':
+      return secondsPerBeat * 0.6
+  }
 }
 
 /** Moderate velocity so the comp sits behind the drums. */
 export const DEFAULT_COMP_VELOCITY = 0.5
 
-// The comp voices are the sustained pad / short stab of the dual-oscillator
-// `classic` synth: their oscillator `type` and ADSR (a long sustain for the
-// pad) are only honored by that voice, so the comp pins `voice: 'classic'`
-// explicitly rather than inheriting the engine's active context (which would
-// play the plucked/piano buffer voices — those ignore `type`/sustain and decay
-// away, so a pad on them would sound wrong).
+// The comp voices are shaped variants of the dual-oscillator `classic` synth:
+// their oscillator `type` and ADSR are only honored by that voice, so the comp
+// pins `voice: 'classic'` explicitly rather than inheriting the engine's active
+// context (which would play the plucked/piano buffer voices — those ignore
+// `type`/sustain and decay away, so a pad on them would sound wrong).
+interface CompVoice {
+  voice: VoiceName
+  type: OscillatorType
+  attack: number
+  decay: number
+  sustain: number
+  release: number
+}
 /** Envelope + waveform for the soft, sustained pad. */
-const PAD_VOICE = {
-  voice: 'classic' as VoiceName,
-  type: 'triangle' as OscillatorType,
+const PAD_VOICE: CompVoice = {
+  voice: 'classic',
+  type: 'triangle',
   attack: 0.09,
   decay: 0.2,
   sustain: 0.85,
   release: 0.55,
 }
 /** Envelope + waveform for the shorter comping stabs. */
-const STAB_VOICE = {
-  voice: 'classic' as VoiceName,
-  type: 'sawtooth' as OscillatorType,
+const STAB_VOICE: CompVoice = {
+  voice: 'classic',
+  type: 'sawtooth',
   attack: 0.008,
   decay: 0.09,
   sustain: 0.35,
   release: 0.14,
 }
+/** Plucky, quick-decaying tone for the broken-chord arpeggio notes. */
+const ARPEGGIO_VOICE: CompVoice = {
+  voice: 'classic',
+  type: 'triangle',
+  attack: 0.005,
+  decay: 0.14,
+  sustain: 0.32,
+  release: 0.2,
+}
+/** Very short, bright skank for the off-beat comp. */
+const OFFBEAT_VOICE: CompVoice = {
+  voice: 'classic',
+  type: 'sawtooth',
+  attack: 0.006,
+  decay: 0.07,
+  sustain: 0.22,
+  release: 0.1,
+}
+/** Warm, medium-length block chord. */
+const BLOCK_VOICE: CompVoice = {
+  voice: 'classic',
+  type: 'triangle',
+  attack: 0.012,
+  decay: 0.16,
+  sustain: 0.6,
+  release: 0.28,
+}
 
-export function compVoice(style: CompStyle): typeof PAD_VOICE {
-  return style === 'pad' ? PAD_VOICE : STAB_VOICE
+const COMP_VOICES: Record<CompStyle, CompVoice> = {
+  pad: PAD_VOICE,
+  stabs: STAB_VOICE,
+  arpeggio: ARPEGGIO_VOICE,
+  offbeat: OFFBEAT_VOICE,
+  block: BLOCK_VOICE,
+}
+
+export function compVoice(style: CompStyle): CompVoice {
+  return COMP_VOICES[style]
 }
 
 /** Options a `ChordTrigger` accepts (a subset of the engine's `PlayNoteOptions`). */
@@ -305,12 +427,23 @@ export interface ChordCompConfig {
   barsPerChord: number
   /** Beats per bar of the current groove — sets a pad's held duration. */
   beatsPerBar: number
+  /**
+   * Steps per beat of the current groove's grid — lets the off-beat styles
+   * (`offbeat`, `arpeggio`) place the "&" at the right subdivision. Default 2.
+   */
+  subdivisionsPerBeat: number
   /** Current tempo — sets the comp chord duration. */
   bpm: number
   /** Count-in bars to skip before the progression starts. */
   countInBars: number
   /** Comp velocity, 0..1. */
   velocity: number
+  /**
+   * Accompaniment mix level, 0..1 (the Play-Along accompaniment-volume slider).
+   * Applied as a scalar on the comp velocity, so it trims the comp under the
+   * drums without touching the engine's master volume. Default 1.
+   */
+  volume: number
 }
 
 export const DEFAULT_CHORD_COMP_CONFIG: ChordCompConfig = {
@@ -319,9 +452,11 @@ export const DEFAULT_CHORD_COMP_CONFIG: ChordCompConfig = {
   voicings: [],
   barsPerChord: 1,
   beatsPerBar: 4,
+  subdivisionsPerBeat: 2,
   bpm: 100,
   countInBars: 0,
   velocity: DEFAULT_COMP_VELOCITY,
+  volume: 1,
 }
 
 /**
@@ -354,16 +489,19 @@ export class ChordCompPlayer {
   handleEvent(position: GridPosition, when: number): void {
     const c = this.cfg
     if (!c.enabled || c.voicings.length === 0) return
-    if (!compTriggersAt(position, c.style)) return
+    if (!compTriggersAt(position, c.style, c.subdivisionsPerBeat)) return
     if (position.bar < c.countInBars) return
     const index = barToChordIndex(position.bar - c.countInBars, c.voicings.length, c.barsPerChord)
     if (index === null) return
     const voicing = c.voicings[index]
     if (!voicing || voicing.length === 0) return
+    const notes = compNoteSelection(position, c.style, voicing, c.subdivisionsPerBeat)
+    if (notes.length === 0) return
     const duration = compChordDuration(c.style, c.beatsPerBar, c.bpm)
-    this.synth.playChord(voicing, duration, {
+    const velocity = Math.min(1, Math.max(0, c.velocity * c.volume))
+    this.synth.playChord(notes, duration, {
       when,
-      velocity: c.velocity,
+      velocity,
       ...compVoice(c.style),
     })
   }

@@ -256,6 +256,18 @@ export interface GroovePlayerOptions {
   enabled?: boolean
   /** Voices muted at construction. */
   muted?: Iterable<DrumVoice>
+  /**
+   * Drum-bus output level, 0..1 (the Play-Along drum-volume slider). Passed as
+   * a `gain` scalar to every `playDrum` so the kit's level is trimmed
+   * independently of the engine's master volume and per-hit velocity. Default 1.
+   */
+  drumVolume?: number
+}
+
+/** Clamp a volume scalar into 0..1; NaN -> 1. */
+function clampVolume(value: number): number {
+  if (Number.isNaN(value)) return 1
+  return Math.min(1, Math.max(0, value))
 }
 
 /**
@@ -269,6 +281,7 @@ export class GroovePlayer {
   private countIn: ResolvedCountIn
   private enabled: boolean
   private readonly muted: Set<DrumVoice>
+  private drumVolume: number
 
   constructor(
     private readonly transport: GrooveTransport,
@@ -279,6 +292,17 @@ export class GroovePlayer {
     this.countIn = resolveCountIn(options.countIn)
     this.enabled = options.enabled ?? true
     this.muted = new Set(options.muted ?? [])
+    this.drumVolume = clampVolume(options.drumVolume ?? 1)
+  }
+
+  /** Current drum-bus level, 0..1. */
+  get volume(): number {
+    return this.drumVolume
+  }
+
+  /** Set the drum-bus level, 0..1 — applied to every hit from the next event on. */
+  setVolume(volume: number): void {
+    this.drumVolume = clampVolume(volume)
   }
 
   /** The groove currently loaded. */
@@ -377,7 +401,7 @@ export class GroovePlayer {
     const plan = planEvent(this.groove, event, this.countIn)
     const hits = plan.phase === 'groove' ? filterMuted(plan.hits, this.muted) : plan.hits
     for (const hit of hits) {
-      this.kit.playDrum(hit.voice, { when, velocity: hit.velocity })
+      this.kit.playDrum(hit.voice, { when, velocity: hit.velocity, gain: this.drumVolume })
     }
   }
 }
@@ -620,15 +644,212 @@ const HALF_TIME: Groove = {
   },
 }
 
+// Disco — four-on-the-floor. Kick on every beat, backbeat snare on 2 & 4, and
+// the signature open hi-hat on the off-beat eighths. A closed hat lands on each
+// beat and, sharing the 'hats' choke group, "pedals" the open hat shut — the
+// pumping disco hat action.
+const DISCO: Groove = {
+  id: 'disco',
+  name: 'Disco',
+  description: 'Four-on-the-floor kick with open-hat offbeats',
+  stepsPerBar: 16,
+  subdivision: '16th',
+  tracks: {
+    kick: makeSteps(16, [
+      [0, 0.9],
+      [4, 0.9],
+      [8, 0.9],
+      [12, 0.9],
+    ]),
+    snare: makeSteps(16, [
+      [4, 0.82],
+      [12, 0.82],
+    ]),
+    'hat-open': makeSteps(16, [
+      [2, 0.5],
+      [6, 0.5],
+      [10, 0.5],
+      [14, 0.5],
+    ]),
+    'hat-closed': makeSteps(16, [
+      [0, 0.5],
+      [4, 0.5],
+      [8, 0.5],
+      [12, 0.5],
+    ]),
+  },
+}
+
+// Motown / soul — a snappy backbeat on 2 & 4 over steady eighth-note hats, with
+// a syncopated kick that pushes the "&" of 2 and 4.
+const MOTOWN: Groove = {
+  id: 'motown',
+  name: 'Motown / Soul',
+  description: 'Backbeat on 2 & 4, eighth hats, syncopated kick',
+  stepsPerBar: 16,
+  subdivision: '16th',
+  tracks: {
+    kick: makeSteps(16, [
+      [0, 0.9],
+      [6, 0.6],
+      [8, 0.85],
+      [14, 0.6],
+    ]),
+    snare: makeSteps(16, [
+      [4, 0.85],
+      [12, 0.85],
+    ]),
+    'hat-closed': eighthLaneOn16(1, 0.6, 0.45),
+  },
+}
+
+// Reggae one-drop — the defining reggae feel: beat 1 is empty (the "drop"),
+// kick and snare land together on beat 3, and the closed hat skanks the
+// off-beat eighths.
+const REGGAE_ONE_DROP: Groove = {
+  id: 'reggae-one-drop',
+  name: 'Reggae One-Drop',
+  description: 'Empty downbeat; kick + snare together on beat 3',
+  stepsPerBar: 16,
+  subdivision: '16th',
+  tracks: {
+    kick: makeSteps(16, [[8, 0.9]]),
+    snare: makeSteps(16, [[8, 0.85]]),
+    'hat-closed': makeSteps(16, [
+      [2, 0.5],
+      [6, 0.5],
+      [10, 0.5],
+      [14, 0.5],
+    ]),
+  },
+}
+
+// Train beat — the driving "boom-chick" locomotive shuffle: a constant stream
+// of sixteenth-note snares, accented hard on the 2 & 4 backbeat and ghosted in
+// between, with a simple 1-&-3 kick and a light quarter-note hat.
+const TRAIN_BEAT: Groove = {
+  id: 'train-beat',
+  name: 'Train Beat',
+  description: 'Driving sixteenth-note snare with a 2 & 4 backbeat',
+  stepsPerBar: 16,
+  subdivision: '16th',
+  tracks: {
+    kick: makeSteps(16, [
+      [0, 0.85],
+      [8, 0.85],
+    ]),
+    snare: makeSteps(16, [
+      [0, 0.45],
+      [1, 0.28],
+      [2, 0.28],
+      [3, 0.28],
+      [4, 0.85],
+      [5, 0.28],
+      [6, 0.28],
+      [7, 0.28],
+      [8, 0.45],
+      [9, 0.28],
+      [10, 0.28],
+      [11, 0.28],
+      [12, 0.85],
+      [13, 0.28],
+      [14, 0.28],
+      [15, 0.28],
+    ]),
+    'hat-closed': makeSteps(16, [
+      [0, 0.4],
+      [4, 0.4],
+      [8, 0.4],
+      [12, 0.4],
+    ]),
+  },
+}
+
+// Half-time shuffle — the Purdie/Bonham feel: a triplet-grid shuffle with a
+// single half-time backbeat on beat 3 and quiet ghost-note snares on the
+// triplet "let" of the other beats. The long-short hat rides the first and last
+// partial of each beat. Written on the triplet grid so the shuffle lives in the
+// note placement (no swing offset needed).
+//
+// GRID LIMIT: a true half-time shuffle layers ghost sixteenths *between* the
+// shuffled triplets — a feel that needs both a triplet and a straight-16th grid
+// at once, which the single-resolution step format can't express. This captures
+// the essential triplet-ghost shuffle; the interleaved 16ths are omitted.
+const HALF_TIME_SHUFFLE: Groove = {
+  id: 'half-time-shuffle',
+  name: 'Half-Time Shuffle',
+  description: 'Triplet shuffle with a half-time backbeat and ghost snares',
+  stepsPerBar: 12,
+  subdivision: 'triplet',
+  tracks: {
+    'hat-closed': makeSteps(12, [
+      [0, 0.55],
+      [2, 0.42],
+      [3, 0.55],
+      [5, 0.42],
+      [6, 0.55],
+      [8, 0.42],
+      [9, 0.55],
+      [11, 0.42],
+    ]),
+    kick: makeSteps(12, [
+      [0, 0.85],
+      [8, 0.5],
+    ]),
+    snare: makeSteps(12, [
+      [2, 0.2], // ghost
+      [5, 0.2], // ghost
+      [6, 0.9], // half-time backbeat on beat 3
+      [11, 0.2], // ghost
+    ]),
+  },
+}
+
+// 16th-note funk — a busier cousin of the Funk groove: a densely syncopated
+// sixteenth kick, a hard 2 & 4 backbeat threaded with ghost snares, and
+// driving sixteenth-note hats.
+const FUNK_16: Groove = {
+  id: 'funk-16',
+  name: 'Funk (16ths)',
+  description: 'Busy syncopated 16th kick with ghost snares and 16th hats',
+  stepsPerBar: 16,
+  subdivision: '16th',
+  tracks: {
+    kick: makeSteps(16, [
+      [0, 0.9],
+      [3, 0.6],
+      [6, 0.8],
+      [8, 0.85],
+      [11, 0.6],
+      [14, 0.7],
+    ]),
+    snare: makeSteps(16, [
+      [2, 0.22], // ghost
+      [4, 0.9], // backbeat
+      [7, 0.22], // ghost
+      [10, 0.22], // ghost
+      [12, 0.9], // backbeat
+      [15, 0.24], // ghost
+    ]),
+    'hat-closed': drivingLane(1, 4, 4, { head: 0.62, off: 0.46, sixteenth: 0.34 }),
+  },
+}
+
 /** All shipped grooves, in picker order. */
 export const GROOVES: readonly Groove[] = [
   ROCK_8THS,
   ROCK_16THS,
   FUNK,
+  FUNK_16,
   SWING,
   BOSSA,
   BLUES_12_8,
   HALF_TIME,
+  HALF_TIME_SHUFFLE,
+  DISCO,
+  MOTOWN,
+  REGGAE_ONE_DROP,
+  TRAIN_BEAT,
 ]
 
 /** The default groove a fresh player loads. */

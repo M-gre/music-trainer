@@ -4989,3 +4989,33 @@ summary:focus-visible,
   font-size: 0.82rem;
 }
 
+
+/* Play-Along mix group: independent Drums / Accompaniment level sliders that
+   sit under (not replacing) the master volume. */
+.pa-mix-group {
+  flex: 1 1 16rem;
+}
+
+.pa-mix-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+}
+
+.pa-mix-label {
+  flex: 0 0 6.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.pa-mix-hint {
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.pa-style-seg {
+  flex-wrap: wrap;
+}

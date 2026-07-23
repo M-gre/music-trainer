@@ -106,12 +106,24 @@ interface DrumVoiceDef {
 
 /**
  * Per-voice synthesis parameters at velocity 1. Levels are balanced by hand so
- * the voices sit within a comparable loudness band (see `DRUM_LOUDNESS_BAND`),
- * with the ride sitting quietest as an airy wash and the kick loudest.
+ * the drum kit reads as the *backbone* of the play-along mix (louder than the
+ * comping pad, which sits at a moderate velocity), while staying internally
+ * balanced. The target balance, expressed as each voice's summed layer peak
+ * gain at velocity 1:
+ *   - kick   ≈ 1.08 — loudest, a solid low-end thump that anchors the groove;
+ *   - snare  ≈ 0.74 — present and cracking, clearly above the cymbals;
+ *   - open hat ≈ 0.48 / closed hat ≈ 0.42 — crisp but never hissy-loud;
+ *   - ride   ≈ 0.36 — an airy wash, quietest in the mix.
+ * These are the velocity-1 peaks; actual hits scale by `velocityToGain(v)` (a
+ * square law), so a 0.9-velocity backbeat kick peaks near 0.87, leaving the
+ * master limiter (threshold -6 dB, 12:1) ample room to tame the rare instant
+ * where kick + snare + hat coincide. Voices occupy different frequency bands,
+ * so their peaks rarely stack destructively.
  */
 export const DRUM_VOICE_DEFS: Record<DrumVoice, DrumVoiceDef> = {
   // Sine body with a fast 150 -> 50 Hz pitch drop (the "thump"), plus a short
-  // high-passed noise click for beater attack definition.
+  // high-passed noise click for beater attack definition. Loudest voice — the
+  // backbone of every groove.
   kick: {
     layers: [
       {
@@ -120,25 +132,26 @@ export const DRUM_VOICE_DEFS: Record<DrumVoice, DrumVoiceDef> = {
         startFreq: 150,
         endFreq: 50,
         pitchDrop: 0.08,
-        gain: 0.62,
+        gain: 0.92,
         attack: 0.002,
         decay: 0.4,
       },
       {
         source: 'noise',
-        gain: 0.12,
+        gain: 0.16,
         attack: 0.0005,
         decay: 0.02,
         filters: [{ type: 'highpass', frequency: 1500, q: 0.7 }],
       },
     ],
   },
-  // Bright high-passed noise burst plus a short ~185 Hz tonal body.
+  // Bright high-passed noise burst plus a short ~185 Hz tonal body. Cracks
+  // clearly through above the cymbals.
   snare: {
     layers: [
       {
         source: 'noise',
-        gain: 0.3,
+        gain: 0.44,
         attack: 0.0008,
         decay: 0.18,
         filters: [
@@ -152,19 +165,20 @@ export const DRUM_VOICE_DEFS: Record<DrumVoice, DrumVoiceDef> = {
         startFreq: 185,
         endFreq: 150,
         pitchDrop: 0.1,
-        gain: 0.22,
+        gain: 0.3,
         attack: 0.001,
         decay: 0.12,
       },
     ],
   },
-  // Metallic high-passed noise, very short — the closed hat "tick".
+  // Metallic high-passed noise, very short — the closed hat "tick". Crisp but
+  // deliberately kept below the snare so it never hisses over the groove.
   'hat-closed': {
     chokeGroup: 'hats',
     layers: [
       {
         source: 'noise',
-        gain: 0.34,
+        gain: 0.42,
         attack: 0.0005,
         decay: 0.05,
         filters: [
@@ -180,7 +194,7 @@ export const DRUM_VOICE_DEFS: Record<DrumVoice, DrumVoiceDef> = {
     layers: [
       {
         source: 'noise',
-        gain: 0.38,
+        gain: 0.48,
         attack: 0.0006,
         decay: 0.4,
         filters: [
@@ -195,7 +209,7 @@ export const DRUM_VOICE_DEFS: Record<DrumVoice, DrumVoiceDef> = {
     layers: [
       {
         source: 'noise',
-        gain: 0.26,
+        gain: 0.36,
         attack: 0.001,
         decay: 0.8,
         filters: [
@@ -209,9 +223,10 @@ export const DRUM_VOICE_DEFS: Record<DrumVoice, DrumVoiceDef> = {
 
 /**
  * Loudness band the per-voice summed peak gains are calibrated to fall within.
- * Used by the balance test; also documents the intended mix range.
+ * Used by the balance test; also documents the intended mix range. Widened when
+ * the kit was pushed up to sit as the mix backbone (kick ≈ 1.08, ride ≈ 0.36).
  */
-export const DRUM_LOUDNESS_BAND = { min: 0.22, max: 0.8 } as const
+export const DRUM_LOUDNESS_BAND = { min: 0.3, max: 1.15 } as const
 
 /** Sum of a spec's layer peak gains — a rough proxy for its peak loudness. */
 export function drumPeakLevel(spec: DrumSpec): number {
@@ -273,6 +288,14 @@ export interface PlayDrumOptions {
   when?: number
   /** 0..1, scales gain (and subtly brightness/decay). Default 1. */
   velocity?: number
+  /**
+   * Linear output-level scalar applied to every layer's peak gain, ≥ 0 (default
+   * 1). A clean level trim decoupled from `velocity`: velocity shapes a hit's
+   * dynamics and brightness, this just scales the whole kit's bus. The
+   * Play-Along drum-volume slider passes it so the drums can sit above/below the
+   * comp without touching per-hit dynamics or the engine's master volume.
+   */
+  gain?: number
 }
 
 /**
@@ -319,6 +342,7 @@ export class DrumKit {
     const { context, destination } = this.getTarget()
     const when = opts.when ?? context.currentTime
     const spec = resolveDrumSpec(voice, opts.velocity ?? 1)
+    const levelScale = Math.max(0, opts.gain ?? 1)
 
     if (spec.chokeGroup) this.choke(spec.chokeGroup, when)
 
@@ -336,7 +360,7 @@ export class DrumKit {
 
     for (const layer of spec.layers) {
       const attack = Math.max(DRUM_MIN_ATTACK, layer.attack)
-      const peak = Math.max(DRUM_FLOOR, layer.gain)
+      const peak = Math.max(DRUM_FLOOR, layer.gain * levelScale)
       const decay = Math.max(0.004, layer.decay)
 
       const gain = context.createGain()
