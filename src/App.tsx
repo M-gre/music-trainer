@@ -2,6 +2,7 @@ import { useHashRoute } from './router.ts'
 import { Home } from './pages/Home.tsx'
 import { NotFound } from './pages/NotFound.tsx'
 import { Metronome } from './pages/Metronome.tsx'
+import { FretboardNoteTrainer } from './pages/FretboardNoteTrainer.tsx'
 
 export interface Tool {
   route: string
@@ -23,6 +24,7 @@ export const TOOLS: Tool[] = [
     title: 'Fretboard Note Trainer',
     description: 'Learn every note on the fretboard with quiz modes, for any bass or guitar tuning.',
     tags: ['bass', 'guitar'],
+    page: () => <FretboardNoteTrainer />,
   },
   {
     route: '/keyboard-notes',
