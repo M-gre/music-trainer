@@ -41,7 +41,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [x] Interval recognition: play interval (melodic/harmonic, asc/desc), multiple choice, per-interval stats, selectable interval set
 - [x] Chord quality recognition: triads + sevenths, root position first, inversions as harder setting
 - [x] Scale/mode recognition quiz
-- [ ] Melodic echo: app plays a short diatonic phrase, user plays it back on the on-screen fretboard/keyboard
+- [x] Melodic echo: app plays a short diatonic phrase, user plays it back on the on-screen fretboard/keyboard
 - [ ] Progressive difficulty levels bundling the above (Level 1: P4/P5/P8 … etc.)
 
 ## M4 — Rhythm & play-along

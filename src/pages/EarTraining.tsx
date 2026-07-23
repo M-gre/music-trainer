@@ -97,6 +97,38 @@ import {
   type ScaleTrainingSettings,
 } from '../lib/scaleRecognitionTraining.ts'
 import { getScale } from '../lib/theory/scales.ts'
+import { Fretboard, type FretboardMarker } from '../components/Fretboard.tsx'
+import { Keyboard, type KeyboardMarker } from '../components/Keyboard.tsx'
+import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
+import { fretMidi } from '../lib/theory/instruments.ts'
+import { midiToName, midiToPc, pcToName, type PitchClass } from '../lib/theory/notes.ts'
+import {
+  accumulateStat as accumulateEchoStat,
+  accuracy as echoAccuracy,
+  ALL_ROOT_PCS,
+  DEFAULT_STEP_SECONDS as ECHO_STEP_SECONDS,
+  EMPTY_MELODIC_ECHO_STATS,
+  generateMelodicEchoQuestion,
+  initialEchoState,
+  INPUT_MODE_OPTIONS,
+  MAX_LENGTH,
+  melodicEchoSettingsStore,
+  melodicEchoStatsStore,
+  MIN_LENGTH,
+  normalizeMelodicEchoSettings,
+  normalizeMelodicEchoStats,
+  phraseLength,
+  questionPhraseSteps,
+  submitEchoNote,
+  type EchoInputMode,
+  type EchoScaleType,
+  type EchoState,
+  type MatchMode,
+  type MelodicEchoContext,
+  type MelodicEchoQuestion,
+  type MelodicEchoSettings,
+  type MelodicEchoStats,
+} from '../lib/melodicEchoTraining.ts'
 
 /** Per-note playback durations (seconds); harmonic rings a little longer. */
 const MELODIC_NOTE_DURATION = 0.7
@@ -111,12 +143,13 @@ const PLAYBACK_OPTIONS: { value: PlaybackSetting; label: string }[] = [
   { value: 'random', label: PLAYBACK_LABELS.random },
 ]
 
-type EarTrainingMode = 'intervals' | 'chord-quality' | 'scales'
+type EarTrainingMode = 'intervals' | 'chord-quality' | 'scales' | 'melodic-echo'
 
 const MODE_OPTIONS: { value: EarTrainingMode; label: string }[] = [
   { value: 'intervals', label: 'Intervals' },
   { value: 'chord-quality', label: 'Chord qualities' },
   { value: 'scales', label: 'Scales' },
+  { value: 'melodic-echo', label: 'Melodic echo' },
 ]
 
 export function EarTraining() {
@@ -130,8 +163,8 @@ export function EarTraining() {
       <div className="tool-page-header">
         <h1>Ear Training</h1>
         <p className="tool-page-lead">
-          Train your ear to name intervals, chord qualities, and scales/modes. Sound plays only
-          after you press Play.
+          Train your ear to name intervals, chord qualities, and scales/modes, or echo a phrase back
+          by ear. Sound plays only after you press Play.
         </p>
       </div>
 
@@ -153,6 +186,7 @@ export function EarTraining() {
       {mode === 'intervals' && <IntervalTrainer />}
       {mode === 'chord-quality' && <ChordQualityTrainer />}
       {mode === 'scales' && <ScaleTrainer />}
+      {mode === 'melodic-echo' && <MelodicEchoTrainer />}
     </div>
   )
 }
@@ -1191,6 +1225,493 @@ function ScaleStatsPanel({ enabled, session, lifetime, onReset }: ScaleStatsPane
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// --- Melodic echo (sibling mode) --------------------------------------------
+
+/** Per-note duration when playing back the phrase (seconds). */
+const ECHO_NOTE_DURATION = 0.55
+/** Fretboard fret range the phrase is echoed within. */
+const ECHO_FROM_FRET = 0
+const ECHO_TO_FRET = 12
+/** Spelling used for phrase note labels/feedback. */
+const ECHO_PREFER = 'sharp' as const
+
+const ECHO_INPUT_LABEL: Record<EchoInputMode, string> = {
+  fretboard: 'Fretboard',
+  keyboard: 'Keyboard',
+}
+
+const ECHO_SCALE_LABEL: Record<EchoScaleType, string> = {
+  major: 'Major',
+  minor: 'Minor',
+}
+
+const ECHO_LENGTHS: readonly number[] = Array.from(
+  { length: MAX_LENGTH - MIN_LENGTH + 1 },
+  (_, i) => MIN_LENGTH + i,
+)
+
+function MelodicEchoTrainer() {
+  const { tuning } = useInstrumentSettings()
+  const engineRef = useRef(getAudioEngine())
+
+  const [settings, setSettings] = useState<MelodicEchoSettings>(() =>
+    normalizeMelodicEchoSettings(melodicEchoSettingsStore.get()),
+  )
+  useEffect(() => {
+    melodicEchoSettingsStore.set(settings)
+  }, [settings])
+
+  // Live context read by the (stable) question generator.
+  const context: MelodicEchoContext = {
+    length: settings.length,
+    rootPc: settings.rootPc,
+    scaleType: settings.scaleType,
+  }
+  const contextRef = useRef(context)
+  contextRef.current = context
+
+  const sessionRef = useRef<QuizSession<MelodicEchoQuestion, boolean> | null>(null)
+  const [question, setQuestion] = useState<MelodicEchoQuestion | null>(null)
+  const [stats, setStats] = useState<QuizStats>(emptyStats)
+  const [echoState, setEchoState] = useState<EchoState>(initialEchoState)
+  /** Concrete positions the player has echoed correctly this run, for markers. */
+  const [progressMarks, setProgressMarks] = useState<FretboardMarker[]>([])
+  const [progressMidis, setProgressMidis] = useState<number[]>([])
+  const [feedback, setFeedback] = useState<{ expected: number; played: number } | null>(null)
+  const [done, setDone] = useState(false)
+  const [lastClean, setLastClean] = useState(false)
+  /** True once the user has made the first audio gesture (enables auto-play). */
+  const [started, setStarted] = useState(false)
+  const startedRef = useRef(false)
+
+  const [sessionStats, setSessionStats] = useState<MelodicEchoStats>(EMPTY_MELODIC_ECHO_STATS)
+  const [lifetimeStats, setLifetimeStats] = useState<MelodicEchoStats>(() =>
+    normalizeMelodicEchoStats(melodicEchoStatsStore.get()),
+  )
+
+  const matchMode: MatchMode = settings.inputMode === 'keyboard' ? 'exact' : 'pitch-class'
+
+  const playPhrase = useCallback((q: MelodicEchoQuestion) => {
+    const engine = engineRef.current
+    void engine.ensureRunning().then(() => {
+      const now = engine.currentTime
+      for (const step of questionPhraseSteps(q, ECHO_STEP_SECONDS, now)) {
+        engine.playNote(step.midi, ECHO_NOTE_DURATION, { when: now + step.when })
+      }
+    })
+  }, [])
+
+  const playSingle = useCallback((midi: number) => {
+    const engine = engineRef.current
+    void engine.ensureRunning().then(() => {
+      engine.playNote(midi, ECHO_NOTE_DURATION, { when: engine.currentTime })
+    })
+  }, [])
+
+  const resetAttempt = useCallback(() => {
+    setEchoState(initialEchoState())
+    setProgressMarks([])
+    setProgressMidis([])
+    setFeedback(null)
+    setDone(false)
+  }, [])
+
+  // (Re)start a session whenever the phrase parameters change (length, key,
+  // scale) or the input instrument. Auto-plays the fresh phrase only if the
+  // user has already made an audio gesture.
+  const contextKey = `${settings.length}|${settings.rootPc}|${settings.scaleType}|${settings.inputMode}`
+  useEffect(() => {
+    const session = new QuizSession<MelodicEchoQuestion, boolean>({
+      generate: (previous, rng) => generateMelodicEchoQuestion(contextRef.current, previous, rng),
+      check: (_q, clean) => clean,
+    })
+    sessionRef.current = session
+    session.next()
+    setQuestion(session.current)
+    setStats(session.stats)
+    resetAttempt()
+    if (startedRef.current && session.current) playPhrase(session.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextKey])
+
+  const markStarted = useCallback(() => {
+    if (!startedRef.current) {
+      startedRef.current = true
+      setStarted(true)
+    }
+  }, [])
+
+  const replay = useCallback(() => {
+    const q = sessionRef.current?.current
+    if (!q) return
+    markStarted()
+    playPhrase(q)
+  }, [markStarted, playPhrase])
+
+  const advance = useCallback(() => {
+    const session = sessionRef.current
+    if (!session) return
+    session.next()
+    setQuestion(session.current)
+    resetAttempt()
+    if (startedRef.current && session.current) playPhrase(session.current)
+  }, [playPhrase, resetAttempt])
+
+  const handleNote = useCallback(
+    (midi: number, mark: FretboardMarker | null) => {
+      const session = sessionRef.current
+      const q = session?.current
+      if (!session || !q || done) return
+      markStarted()
+      const res = submitEchoNote(q, echoState, midi, matchMode)
+      playSingle(midi)
+
+      if (res.result === 'wrong') {
+        setFeedback({ expected: res.expected, played: midi })
+        setEchoState(res.state)
+        setProgressMarks([])
+        setProgressMidis([])
+        return
+      }
+
+      setFeedback(null)
+      setEchoState(res.state)
+      if (mark) setProgressMarks((m) => [...m, mark])
+      setProgressMidis((m) => [...m, midi])
+
+      if (res.complete) {
+        session.answer(res.clean)
+        setStats(session.stats)
+        setDone(true)
+        setLastClean(res.clean)
+        const streak = session.stats.streak
+        setSessionStats((s) => accumulateEchoStat(s, res.clean, streak))
+        setLifetimeStats((s) => {
+          const next = accumulateEchoStat(s, res.clean, streak)
+          melodicEchoStatsStore.set(next)
+          return next
+        })
+      }
+    },
+    [done, echoState, matchMode, markStarted, playSingle],
+  )
+
+  const resetStats = useCallback(() => {
+    setSessionStats(EMPTY_MELODIC_ECHO_STATS)
+    setLifetimeStats(EMPTY_MELODIC_ECHO_STATS)
+    melodicEchoStatsStore.set(EMPTY_MELODIC_ECHO_STATS)
+  }, [])
+
+  const setLength = (length: number): void => setSettings((s) => ({ ...s, length }))
+  const setRootPc = (rootPc: PitchClass): void => setSettings((s) => ({ ...s, rootPc }))
+  const setScaleType = (scaleType: EchoScaleType): void => setSettings((s) => ({ ...s, scaleType }))
+  const setInputMode = (inputMode: EchoInputMode): void => setSettings((s) => ({ ...s, inputMode }))
+
+  const total = question ? phraseLength(question) : 0
+  const referenceMidi = question?.midis[0] ?? null
+
+  // Fretboard markers: the starting-reference note (all matching pitch-class
+  // positions in range, dim) plus the positions echoed correctly so far.
+  const fretMarkers = useMemo<FretboardMarker[]>(() => {
+    if (!question) return []
+    const byKey = new Map<string, FretboardMarker>()
+    if (referenceMidi !== null && echoState.matched === 0) {
+      const refPc = midiToPc(referenceMidi)
+      for (let s = 0; s < tuning.strings.length; s += 1) {
+        for (let f = ECHO_FROM_FRET; f <= ECHO_TO_FRET; f += 1) {
+          const midi = fretMidi(tuning, s, f)
+          if (midiToPc(midi) === refPc) {
+            byKey.set(`${s}:${f}`, {
+              string: s,
+              fret: f,
+              variant: 'dim',
+              label: pcToName(refPc, ECHO_PREFER),
+            })
+          }
+        }
+      }
+    }
+    for (const m of progressMarks) {
+      byKey.set(`${m.string}:${m.fret}`, { ...m, variant: 'correct' })
+    }
+    return [...byKey.values()]
+  }, [question, referenceMidi, echoState.matched, progressMarks, tuning])
+
+  // Keyboard markers: the starting-reference key (dim) plus echoed keys.
+  const keyMarkers = useMemo<KeyboardMarker[]>(() => {
+    if (!question) return []
+    const byMidi = new Map<number, KeyboardMarker>()
+    if (referenceMidi !== null && echoState.matched === 0) {
+      byMidi.set(referenceMidi, {
+        midi: referenceMidi,
+        variant: 'dim',
+        label: midiToName(referenceMidi, ECHO_PREFER),
+      })
+    }
+    for (const midi of progressMidis) {
+      byMidi.set(midi, { midi, variant: 'correct', label: midiToName(midi, ECHO_PREFER) })
+    }
+    return [...byMidi.values()]
+  }, [question, referenceMidi, echoState.matched, progressMidis])
+
+  const keyboardRange = useMemo(() => {
+    if (!question) return { from: 60, to: 72 }
+    const lo = Math.min(...question.midis)
+    const hi = Math.max(...question.midis)
+    return { from: lo - 2, to: hi + 2 }
+  }, [question])
+
+  const keyLabel = settings.inputMode === 'keyboard'
+  const feedbackExpected = feedback
+    ? keyLabel
+      ? midiToName(feedback.expected, ECHO_PREFER)
+      : pcToName(midiToPc(feedback.expected), ECHO_PREFER)
+    : ''
+  const feedbackPlayed = feedback
+    ? keyLabel
+      ? midiToName(feedback.played, ECHO_PREFER)
+      : pcToName(midiToPc(feedback.played), ECHO_PREFER)
+    : ''
+
+  return (
+    <>
+      <div className="tool-controls">
+        <div className="tool-control-group">
+          <span className="tool-control-label">Phrase length</span>
+          <div className="mn-segmented" role="group" aria-label="Phrase length">
+            {ECHO_LENGTHS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`mn-segment${settings.length === n ? ' mn-segment-active' : ''}`}
+                aria-pressed={settings.length === n}
+                onClick={() => setLength(n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Key</span>
+          <div className="et-echo-key">
+            <select
+              className="ip-select"
+              aria-label="Root note"
+              value={settings.rootPc}
+              onChange={(e) => setRootPc(Number(e.target.value) as PitchClass)}
+            >
+              {ALL_ROOT_PCS.map((pc) => (
+                <option key={pc} value={pc}>
+                  {pcToName(pc, ECHO_PREFER)}
+                </option>
+              ))}
+            </select>
+            <div className="mn-segmented" role="group" aria-label="Scale">
+              {(['major', 'minor'] as const).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  className={`mn-segment${settings.scaleType === st ? ' mn-segment-active' : ''}`}
+                  aria-pressed={settings.scaleType === st}
+                  onClick={() => setScaleType(st)}
+                >
+                  {ECHO_SCALE_LABEL[st]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Echo on</span>
+          <div className="mn-segmented" role="group" aria-label="Input instrument">
+            {INPUT_MODE_OPTIONS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`mn-segment${settings.inputMode === m ? ' mn-segment-active' : ''}`}
+                aria-pressed={settings.inputMode === m}
+                onClick={() => setInputMode(m)}
+              >
+                {ECHO_INPUT_LABEL[m]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="fnt-prompt" role="status" aria-live="polite">
+        <MelodicEchoPrompt
+          started={started}
+          done={done}
+          clean={lastClean}
+          feedbackExpected={feedbackExpected}
+          feedbackPlayed={feedbackPlayed}
+          hasFeedback={feedback !== null}
+        />
+      </div>
+
+      <div className="et-transport">
+        <button type="button" className="et-play" onClick={replay}>
+          {started ? '▶ Play phrase again' : '▶ Play phrase'}
+        </button>
+      </div>
+
+      {started && !done && (
+        <div className="et-echo-progress" role="status" aria-live="polite">
+          Echoed <strong>{echoState.matched}</strong> / {total}
+        </div>
+      )}
+
+      <div className="et-echo-board">
+        {settings.inputMode === 'fretboard' ? (
+          <Fretboard
+            tuning={tuning}
+            fromFret={ECHO_FROM_FRET}
+            toFret={ECHO_TO_FRET}
+            markers={fretMarkers}
+            prefer={ECHO_PREFER}
+            onFretClick={done ? undefined : (pos) => handleNote(pos.midi, { string: pos.string, fret: pos.fret })}
+            ariaLabel={`${tuning.name} — echo the phrase`}
+          />
+        ) : (
+          <Keyboard
+            from={keyboardRange.from}
+            to={keyboardRange.to}
+            markers={keyMarkers}
+            prefer={ECHO_PREFER}
+            showLabels="c"
+            onKeyClick={done ? undefined : ({ midi }) => handleNote(midi, null)}
+            ariaLabel="Echo the phrase on the keyboard"
+          />
+        )}
+      </div>
+
+      {done && (
+        <div className="et-compare" role="group" aria-label="Phrase complete">
+          <button type="button" className="et-next" onClick={advance}>
+            Next phrase →
+          </button>
+        </div>
+      )}
+
+      <div className="fnt-score">
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">{stats.streak}</span>
+          <span className="fnt-score-label">Streak</span>
+        </div>
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">
+            {stats.correct}
+            <span className="fnt-score-sep">/</span>
+            {stats.answered}
+          </span>
+          <span className="fnt-score-label">Clean</span>
+        </div>
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">{stats.bestStreak}</span>
+          <span className="fnt-score-label">Best streak</span>
+        </div>
+      </div>
+
+      <MelodicEchoStatsPanel session={sessionStats} lifetime={lifetimeStats} onReset={resetStats} />
+    </>
+  )
+}
+
+interface MelodicEchoPromptProps {
+  started: boolean
+  done: boolean
+  clean: boolean
+  hasFeedback: boolean
+  feedbackExpected: string
+  feedbackPlayed: string
+}
+
+function MelodicEchoPrompt({
+  started,
+  done,
+  clean,
+  hasFeedback,
+  feedbackExpected,
+  feedbackPlayed,
+}: MelodicEchoPromptProps) {
+  if (done) {
+    return clean ? (
+      <span className="fnt-prompt-feedback fnt-correct">Clean echo — nicely done!</span>
+    ) : (
+      <span className="fnt-prompt-feedback fnt-correct">Phrase complete (with a slip or two).</span>
+    )
+  }
+  if (hasFeedback) {
+    return (
+      <span className="fnt-prompt-feedback fnt-wrong">
+        Not quite — expected <strong>{feedbackExpected}</strong>, you played{' '}
+        <strong>{feedbackPlayed}</strong>. Start the phrase again.
+      </span>
+    )
+  }
+  if (!started) {
+    return (
+      <span className="fnt-prompt-text">
+        Press Play to hear the phrase, then echo it back note by note. The first note is highlighted
+        to get you started.
+      </span>
+    )
+  }
+  return (
+    <span className="fnt-prompt-text">
+      Echo the <strong className="fnt-target">phrase</strong> back, starting on the highlighted note.
+    </span>
+  )
+}
+
+interface MelodicEchoStatsPanelProps {
+  session: MelodicEchoStats
+  lifetime: MelodicEchoStats
+  onReset: () => void
+}
+
+/** Overall accuracy chips (session + lifetime): clean phrases and best streak. */
+function MelodicEchoStatsPanel({ session, lifetime, onReset }: MelodicEchoStatsPanelProps) {
+  return (
+    <div className="et-stats">
+      <div className="et-stats-head">
+        <span className="tool-control-label">Phrase accuracy</span>
+        <button type="button" className="et-reset" onClick={onReset}>
+          Reset stats
+        </button>
+      </div>
+      <div className="et-stats-grid">
+        <div className="et-stat">
+          <span className="et-stat-name">Session</span>
+          <span className="et-stat-line">
+            <span className="et-stat-tag">Clean</span>
+            {formatStat(echoAccuracy(session), session.attempts)}
+          </span>
+          <span className="et-stat-line">
+            <span className="et-stat-tag">Best streak</span>
+            <span className="et-stat-acc">{session.bestStreak}</span>
+          </span>
+        </div>
+        <div className="et-stat">
+          <span className="et-stat-name">Lifetime</span>
+          <span className="et-stat-line">
+            <span className="et-stat-tag">Clean</span>
+            {formatStat(echoAccuracy(lifetime), lifetime.attempts)}
+          </span>
+          <span className="et-stat-line">
+            <span className="et-stat-tag">Best streak</span>
+            <span className="et-stat-acc">{lifetime.bestStreak}</span>
+          </span>
+        </div>
       </div>
     </div>
   )
