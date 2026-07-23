@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pianoOptionsForMidi, pianoPartials, renderFmPiano } from './fmPiano.ts'
-import { dcOffset, dominantFrequency, peakAmplitude, rms } from './voices.ts'
+import { dcOffset, dominantFrequency, energyFractionAbove, peakAmplitude, rms } from './voices.ts'
 
 const SR = 44100
 
@@ -31,11 +31,13 @@ describe('pianoPartials', () => {
     }
   })
 
-  it('low register uses more, steeper partials than the treble', () => {
+  it('low register uses more, steeper partials, a longer ring and a heavier hammer', () => {
     const bass = pianoOptionsForMidi(28)
     const treble = pianoOptionsForMidi(88)
     expect(bass.partialCount).toBeGreaterThan(treble.partialCount)
     expect(bass.tilt).toBeGreaterThan(treble.tilt) // darker
+    expect(bass.baseDecay).toBeGreaterThan(treble.baseDecay) // rings longer
+    expect(bass.hammer).toBeGreaterThan(treble.hammer) // heavier hammer knock
   })
 })
 
@@ -87,5 +89,25 @@ describe('renderFmPiano', () => {
     expect(peakAmplitude(out)).toBeLessThanOrEqual(1)
     expect(peakAmplitude(out)).toBeGreaterThan(0.3)
     expect(Number.isFinite(rms(out))).toBe(true)
+  })
+
+  it('is deterministic for a given seed (hammer noise included)', () => {
+    const a = renderFmPiano(60, 0.3, SR, pianoOptionsForMidi(60))
+    const b = renderFmPiano(60, 0.3, SR, pianoOptionsForMidi(60))
+    expect(Array.from(a)).toEqual(Array.from(b))
+  })
+
+  it('the hammer transient brightens the attack (more high-frequency knock)', () => {
+    const midi = 45
+    const opts = pianoOptionsForMidi(midi)
+    const withHammer = renderFmPiano(midi, 0.5, SR, opts)
+    const noHammer = renderFmPiano(midi, 0.5, SR, { ...opts, hammer: 0 })
+    const attack = Math.round(0.025 * SR)
+    // The hammer raises the >1 kHz content over the first ~25 ms — a percussive
+    // knock on top of the darker sustained tone. The fraction is scale-invariant
+    // so it is robust to each buffer's independent normalization.
+    const hfWith = energyFractionAbove(withHammer.subarray(0, attack), SR, 1000)
+    const hfNo = energyFractionAbove(noHammer.subarray(0, attack), SR, 1000)
+    expect(hfWith).toBeGreaterThan(hfNo)
   })
 })

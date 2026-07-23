@@ -184,6 +184,96 @@ export function dominantFrequency(
   return bestLag > 0 ? sampleRate / bestLag : 0
 }
 
+/**
+ * Goertzel power (squared magnitude) of `samples` at a single frequency `freq`.
+ * O(N) per frequency — cheaper than a full FFT when only a handful of bins are
+ * needed, and implementable in pure TS. Used by the spectral test helpers below.
+ */
+export function goertzelPower(samples: Float32Array, sampleRate: number, freq: number): number {
+  const omega = (2 * Math.PI * freq) / sampleRate
+  const coeff = 2 * Math.cos(omega)
+  let s1 = 0
+  let s2 = 0
+  for (let i = 0; i < samples.length; i += 1) {
+    const s0 = (samples[i] ?? 0) + coeff * s1 - s2
+    s2 = s1
+    s1 = s0
+  }
+  return s1 * s1 + s2 * s2 - coeff * s1 * s2
+}
+
+/** A Hann-windowed copy of `samples` (reduces spectral leakage in the DFT bins). */
+function hannWindowed(samples: Float32Array): Float32Array {
+  const n = samples.length
+  const out = new Float32Array(n)
+  if (n < 2) {
+    out.set(samples)
+    return out
+  }
+  for (let i = 0; i < n; i += 1) {
+    const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1))
+    out[i] = (samples[i] ?? 0) * w
+  }
+  return out
+}
+
+/** Power at each of `freqs`, on a Hann-windowed copy of `samples`. */
+function powerAtFreqs(samples: Float32Array, sampleRate: number, freqs: number[]): number[] {
+  const windowed = hannWindowed(samples)
+  return freqs.map((f) => goertzelPower(windowed, sampleRate, f))
+}
+
+/**
+ * Spectral centroid (Hz) of `samples` — the power-weighted mean frequency, a
+ * standard proxy for perceived brightness. Estimated over `bins` linearly
+ * spaced Goertzel bins up to `maxHz`. Used by tests to cap a voice's brightness
+ * per register (a clangy/metallic tone has an abnormally high centroid).
+ */
+export function spectralCentroid(
+  samples: Float32Array,
+  sampleRate: number,
+  opts: { maxHz?: number; bins?: number } = {},
+): number {
+  const maxHz = Math.min(sampleRate / 2, opts.maxHz ?? 12000)
+  const bins = opts.bins ?? 96
+  const freqs: number[] = []
+  for (let b = 1; b <= bins; b += 1) freqs.push((b / bins) * maxHz)
+  const powers = powerAtFreqs(samples, sampleRate, freqs)
+  let num = 0
+  let den = 0
+  for (let b = 0; b < bins; b += 1) {
+    const p = powers[b] ?? 0
+    num += (freqs[b] ?? 0) * p
+    den += p
+  }
+  return den > 0 ? num / den : 0
+}
+
+/**
+ * Fraction (0..1) of spectral power at or above `cutoffHz`. Used to assert that
+ * a bass note carries almost no energy in the high treble (the "zing" band).
+ */
+export function energyFractionAbove(
+  samples: Float32Array,
+  sampleRate: number,
+  cutoffHz: number,
+  opts: { maxHz?: number; bins?: number } = {},
+): number {
+  const maxHz = Math.min(sampleRate / 2, opts.maxHz ?? 15000)
+  const bins = opts.bins ?? 160
+  const freqs: number[] = []
+  for (let b = 1; b <= bins; b += 1) freqs.push((b / bins) * maxHz)
+  const powers = powerAtFreqs(samples, sampleRate, freqs)
+  let above = 0
+  let total = 0
+  for (let b = 0; b < bins; b += 1) {
+    const p = powers[b] ?? 0
+    total += p
+    if ((freqs[b] ?? 0) >= cutoffHz) above += p
+  }
+  return total > 0 ? above / total : 0
+}
+
 // --- Perceptual level normalization -----------------------------------------
 
 /**
