@@ -100,6 +100,13 @@ export function FretboardNoteTrainer() {
     trainerSettingsStore.set(settings)
   }, [settings])
 
+  // Single-surface fretboard tool: sound every note with the fretted (pluck)
+  // voice. Asserted on mount so it is deterministic regardless of which tool
+  // the user visited before (the engine's voice context is app-global).
+  useEffect(() => {
+    engineRef.current.setVoiceContext('fretted')
+  }, [])
+
   const [noteStats, setNoteStats] = useState<NoteStatsData>(() =>
     normalizeNoteStats(fretboardStatsStore.get()),
   )

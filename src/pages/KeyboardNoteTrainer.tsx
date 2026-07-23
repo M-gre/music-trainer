@@ -94,6 +94,13 @@ export function KeyboardNoteTrainer() {
     keyboardTrainerSettingsStore.set(settings)
   }, [settings])
 
+  // Single-surface keyboard tool: sound every note with the keyboard (piano)
+  // voice. Asserted on mount so it is deterministic regardless of which tool
+  // the user visited before (the engine's voice context is app-global).
+  useEffect(() => {
+    engineRef.current.setVoiceContext('keyboard')
+  }, [])
+
   const [noteStats, setNoteStats] = useState<NoteStatsData>(() =>
     normalizeNoteStats(keyboardStatsStore.get()),
   )

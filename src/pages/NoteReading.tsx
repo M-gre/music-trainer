@@ -117,6 +117,13 @@ export function NoteReading() {
     noteReadingSettingsStore.set(settings)
   }, [settings])
 
+  // The "hear it" playback matches the answer-input surface: the keyboard input
+  // plays the keyboard (piano) voice, the fretboard and name inputs play the
+  // fretted (pluck) voice. Re-asserted whenever the input mode changes.
+  useEffect(() => {
+    engineRef.current.setVoiceContext(settings.inputMode === 'keyboard' ? 'keyboard' : 'fretted')
+  }, [settings.inputMode])
+
   const sessionRef = useRef<QuizSession<NoteReadingQuestion, NoteReadingAnswer> | null>(null)
   const [question, setQuestion] = useState<NoteReadingQuestion | null>(null)
   const [result, setResult] = useState<AnswerResult<NoteReadingQuestion, NoteReadingAnswer> | null>(null)

@@ -238,6 +238,14 @@ function IntervalTrainer({ fixedSettings, onAnswer }: IntervalTrainerProps = {})
   const advanceTimeoutRef = useRef<number | null>(null)
   const levelMode = fixedSettings !== undefined
 
+  // Answers are multiple-choice buttons (no instrument surface), so this
+  // ear-training mode keeps the default fretted (pluck) voice. Asserted on mount
+  // so it is deterministic after visiting a keyboard-voiced tool (the engine's
+  // voice context is app-global).
+  useEffect(() => {
+    engineRef.current.setVoiceContext('fretted')
+  }, [])
+
   const [settings, setSettings] = useState<EarTrainingSettings>(
     () => fixedSettings ?? normalizeEarTrainingSettings(earTrainingSettingsStore.get()),
   )
@@ -591,6 +599,14 @@ function ChordQualityTrainer({ fixedSettings, onAnswer }: ChordQualityTrainerPro
   const engineRef = useRef(getAudioEngine())
   const advanceTimeoutRef = useRef<number | null>(null)
   const levelMode = fixedSettings !== undefined
+
+  // Answers are multiple-choice buttons (no instrument surface), so this
+  // ear-training mode keeps the default fretted (pluck) voice. Asserted on mount
+  // so it is deterministic after visiting a keyboard-voiced tool (the engine's
+  // voice context is app-global).
+  useEffect(() => {
+    engineRef.current.setVoiceContext('fretted')
+  }, [])
 
   const [settings, setSettings] = useState<ChordQualityTrainingSettings>(
     () => fixedSettings ?? normalizeChordQualityTrainingSettings(chordQualitySettingsStore.get()),
@@ -1030,6 +1046,14 @@ function ScaleTrainer({ fixedSettings, onAnswer }: ScaleTrainerProps = {}) {
   const engineRef = useRef(getAudioEngine())
   const advanceTimeoutRef = useRef<number | null>(null)
   const levelMode = fixedSettings !== undefined
+
+  // Answers are multiple-choice buttons (no instrument surface), so this
+  // ear-training mode keeps the default fretted (pluck) voice. Asserted on mount
+  // so it is deterministic after visiting a keyboard-voiced tool (the engine's
+  // voice context is app-global).
+  useEffect(() => {
+    engineRef.current.setVoiceContext('fretted')
+  }, [])
 
   const [settings, setSettings] = useState<ScaleTrainingSettings>(
     () => fixedSettings ?? normalizeScaleTrainingSettings(scaleSettingsStore.get()),
@@ -1522,6 +1546,13 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
   )
 
   const matchMode: MatchMode = settings.inputMode === 'keyboard' ? 'exact' : 'pitch-class'
+
+  // The echo phrase and the player's tapped-note feedback both sound with the
+  // voice of the answer surface: keyboard input plays the keyboard (piano)
+  // voice, fretboard input the fretted (pluck) voice. Re-asserted on change.
+  useEffect(() => {
+    engineRef.current.setVoiceContext(settings.inputMode === 'keyboard' ? 'keyboard' : 'fretted')
+  }, [settings.inputMode])
 
   const playPhrase = useCallback((q: MelodicEchoQuestion) => {
     const engine = engineRef.current

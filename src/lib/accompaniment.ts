@@ -18,6 +18,7 @@
  * `GroovePlayer` consumes, at the same audio `when` times.
  */
 
+import type { VoiceName } from './audio/voices.ts'
 import { VOICING_BASE_MIDI } from './chordExplorer.ts'
 import { buildDiatonicChordCards, nearestVoicing } from './diatonicChords.ts'
 import type { GridPosition } from './audio/scheduler.ts'
@@ -246,8 +247,15 @@ export function compChordDuration(style: CompStyle, beatsPerBar: number, bpm: nu
 /** Moderate velocity so the comp sits behind the drums. */
 export const DEFAULT_COMP_VELOCITY = 0.5
 
+// The comp voices are the sustained pad / short stab of the dual-oscillator
+// `classic` synth: their oscillator `type` and ADSR (a long sustain for the
+// pad) are only honored by that voice, so the comp pins `voice: 'classic'`
+// explicitly rather than inheriting the engine's active context (which would
+// play the plucked/piano buffer voices — those ignore `type`/sustain and decay
+// away, so a pad on them would sound wrong).
 /** Envelope + waveform for the soft, sustained pad. */
 const PAD_VOICE = {
+  voice: 'classic' as VoiceName,
   type: 'triangle' as OscillatorType,
   attack: 0.09,
   decay: 0.2,
@@ -256,6 +264,7 @@ const PAD_VOICE = {
 }
 /** Envelope + waveform for the shorter comping stabs. */
 const STAB_VOICE = {
+  voice: 'classic' as VoiceName,
   type: 'sawtooth' as OscillatorType,
   attack: 0.008,
   decay: 0.09,
@@ -271,6 +280,8 @@ export function compVoice(style: CompStyle): typeof PAD_VOICE {
 export interface ChordVoiceOptions {
   when?: number
   velocity?: number
+  /** Which synthesized voice to use (the comp pins `classic`; see `compVoice`). */
+  voice?: VoiceName
   type?: OscillatorType
   attack?: number
   decay?: number

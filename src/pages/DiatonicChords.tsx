@@ -15,7 +15,7 @@
  * Metronome/Circle of Fifths/Chord Explorer pattern).
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Fretboard } from '../components/Fretboard.tsx'
 import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
 import { Keyboard } from '../components/Keyboard.tsx'
@@ -49,6 +49,13 @@ export function DiatonicChords() {
   )
   const [selectedDegree, setSelectedDegree] = useState(1)
   const [busy, setBusy] = useState(false)
+
+  // Bass-primary key/theory tool (chord tones shown on the fretboard for bass
+  // lines): chord + progression playback uses the fretted (pluck) voice.
+  // Asserted on mount since the engine's voice context is app-global.
+  useEffect(() => {
+    engineRef.current.setVoiceContext('fretted')
+  }, [])
 
   const { rootPc, scaleId } = settings
 
