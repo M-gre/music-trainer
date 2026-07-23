@@ -1,18 +1,23 @@
 /**
- * Ear Training — the app's first by-ear quiz tool. Currently a single quiz:
- * interval recognition. It is a thin React shell over two pure cores:
+ * Ear Training — by-ear quiz tools, now two sibling modes selected by a
+ * top-level segmented control: interval recognition and chord-quality
+ * recognition. Both are thin React shells over pure cores:
  *  - `src/lib/quiz.ts`: `QuizSession` (score/streak), reused by every quiz.
- *  - `src/lib/earTraining.ts`: question generation, answer checking, playback
- *    scheduling, per-interval stats, and the persisted settings/stats stores.
+ *  - `src/lib/earTraining.ts`: interval question generation, answer checking,
+ *    playback scheduling, per-interval stats, and the persisted
+ *    settings/stats stores.
+ *  - `src/lib/chordQualityTraining.ts`: the chord-quality equivalent —
+ *    question generation (root/quality/inversion), answer checking, the
+ *    voicing/arpeggio to play (via `chordExplorer.ts`), per-quality stats,
+ *    and its own persisted settings/stats stores.
  *
- * Structured for the rest of milestone M3. The later ear-training quizzes
- * (chord-quality recognition, scale/mode recognition) are meant to slot in as
- * SIBLING MODES here: add a mode to a top-level segmented control and render a
- * different trainer component. Everything interval-specific lives in
- * `IntervalTrainer` below and in `earTraining.ts`, so a chord/scale trainer can
- * reuse the same `QuizSession` wiring, the `et-*` styles, the play/replay
- * transport, the multiple-choice grid, and the stats-chip pattern without
- * touching this file's shell. Audio only ever starts from a user gesture
+ * Structured for the rest of milestone M3: a future scale/mode recognition
+ * quiz is meant to slot in as another SIBLING MODE here — add it to the
+ * segmented control below and render another trainer component. Each mode
+ * owns its own settings/stats stores so switching tabs never clobbers the
+ * other mode's progress. Both trainers reuse the same `QuizSession` wiring,
+ * the `et-*` styles, the play/replay transport, the multiple-choice grid, and
+ * the stats-chip pattern. Audio only ever starts from a user gesture
  * (`ensureRunning`), never at mount — matching the other tool pages.
  */
 
@@ -41,6 +46,29 @@ import {
   type PlaybackSetting,
   type QuestionContext,
 } from '../lib/earTraining.ts'
+import {
+  accumulateStat as accumulateChordQualityStat,
+  accuracy as chordQualityAccuracy,
+  ALL_QUALITY_IDS,
+  checkChordQualityAnswer,
+  CHORD_QUALITY_PRESETS,
+  chordQualitySettingsStore,
+  chordQualityStatsStore,
+  generateChordQualityQuestion,
+  inversionLabel,
+  normalizeChordQualityStats,
+  normalizeChordQualityTrainingSettings,
+  qualityShort,
+  questionArpeggioSteps,
+  questionVoicingMidis,
+  sortQualityIds,
+  toggleQuality,
+  type ChordQualityContext,
+  type ChordQualityQuestion,
+  type ChordQualityStats,
+  type ChordQualityTrainingSettings,
+} from '../lib/chordQualityTraining.ts'
+import { getChordQuality } from '../lib/theory/chords.ts'
 
 /** Per-note playback durations (seconds); harmonic rings a little longer. */
 const MELODIC_NOTE_DURATION = 0.7
@@ -55,18 +83,45 @@ const PLAYBACK_OPTIONS: { value: PlaybackSetting; label: string }[] = [
   { value: 'random', label: PLAYBACK_LABELS.random },
 ]
 
+type EarTrainingMode = 'intervals' | 'chord-quality'
+
+const MODE_OPTIONS: { value: EarTrainingMode; label: string }[] = [
+  { value: 'intervals', label: 'Intervals' },
+  { value: 'chord-quality', label: 'Chord qualities' },
+]
+
 export function EarTraining() {
-  // Only one mode today; the segmented control in the shell is the seam for
-  // chord-quality / scale-recognition modes to slot in later.
+  // Sibling modes, each a fully separate trainer with its own settings/stats
+  // stores (see the file-level notes above); this segmented control is the
+  // seam a future scale/mode-recognition quiz slots into.
+  const [mode, setMode] = useState<EarTrainingMode>('intervals')
+
   return (
     <div className="tool-page">
       <div className="tool-page-header">
         <h1>Ear Training</h1>
         <p className="tool-page-lead">
-          Train your ear to name intervals. Sound plays only after you press Play.
+          Train your ear to name intervals and chord qualities. Sound plays only after you press
+          Play.
         </p>
       </div>
-      <IntervalTrainer />
+
+      <div className="mn-segmented" role="tablist" aria-label="Ear training mode">
+        {MODE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="tab"
+            aria-selected={mode === option.value}
+            className={`mn-segment${mode === option.value ? ' mn-segment-active' : ''}`}
+            onClick={() => setMode(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'intervals' ? <IntervalTrainer /> : <ChordQualityTrainer />}
     </div>
   )
 }
@@ -353,6 +408,394 @@ function IntervalTrainer() {
         onReset={resetStats}
       />
     </>
+  )
+}
+
+// --- Chord quality recognition (sibling mode) -------------------------------
+
+/** Block-chord playback duration (seconds); a touch longer than a melodic note so the quality settles. */
+const CHORD_DURATION = 1.4
+/** Per-note duration when replaying the chord as an arpeggio. */
+const ARPEGGIO_NOTE_DURATION = 0.55
+/** Spacing between arpeggio notes (seconds). */
+const ARPEGGIO_STEP_SECONDS = 0.24
+/** How long a correct answer stays up before auto-advancing (ms). */
+const ADVANCE_MS_CORRECT_CHORD = 1000
+
+function ChordQualityTrainer() {
+  const engineRef = useRef(getAudioEngine())
+  const advanceTimeoutRef = useRef<number | null>(null)
+
+  const [settings, setSettings] = useState<ChordQualityTrainingSettings>(() =>
+    normalizeChordQualityTrainingSettings(chordQualitySettingsStore.get()),
+  )
+  useEffect(() => {
+    chordQualitySettingsStore.set(settings)
+  }, [settings])
+
+  // Live context read by the (stable) question generator.
+  const context: ChordQualityContext = {
+    enabled: settings.enabled,
+    inversions: settings.inversions,
+  }
+  const contextRef = useRef(context)
+  contextRef.current = context
+
+  const sessionRef = useRef<QuizSession<ChordQualityQuestion, string> | null>(null)
+  const [question, setQuestion] = useState<ChordQualityQuestion | null>(null)
+  const [stats, setStats] = useState<QuizStats>(emptyStats)
+  const [answer, setAnswer] = useState<string | null>(null)
+  /** True once the user has made the first audio gesture (enables auto-play). */
+  const [started, setStarted] = useState(false)
+  const startedRef = useRef(false)
+
+  const [sessionStats, setSessionStats] = useState<ChordQualityStats>({})
+  const [lifetimeStats, setLifetimeStats] = useState<ChordQualityStats>(() =>
+    normalizeChordQualityStats(chordQualityStatsStore.get()),
+  )
+
+  const clearAdvance = useCallback(() => {
+    if (advanceTimeoutRef.current !== null) {
+      window.clearTimeout(advanceTimeoutRef.current)
+      advanceTimeoutRef.current = null
+    }
+  }, [])
+
+  /** Play a question's voicing as a block chord. */
+  const playBlock = useCallback((q: ChordQualityQuestion) => {
+    const engine = engineRef.current
+    void engine.ensureRunning().then(() => {
+      engine.playChord(questionVoicingMidis(q), CHORD_DURATION, { when: engine.currentTime })
+    })
+  }, [])
+
+  /** Replay a question's voicing as a timed up-then-down arpeggio. */
+  const playArpeggio = useCallback((q: ChordQualityQuestion) => {
+    const engine = engineRef.current
+    void engine.ensureRunning().then(() => {
+      const now = engine.currentTime
+      for (const step of questionArpeggioSteps(q, ARPEGGIO_STEP_SECONDS, now, true)) {
+        engine.playNote(step.midi, ARPEGGIO_NOTE_DURATION, { when: step.when })
+      }
+    })
+  }, [])
+
+  const markStarted = useCallback(() => {
+    if (!startedRef.current) {
+      startedRef.current = true
+      setStarted(true)
+    }
+  }, [])
+
+  const playCurrent = useCallback(() => {
+    const q = sessionRef.current?.current
+    if (!q) return
+    markStarted()
+    playBlock(q)
+  }, [markStarted, playBlock])
+
+  const playCurrentArpeggio = useCallback(() => {
+    const q = sessionRef.current?.current
+    if (!q) return
+    markStarted()
+    playArpeggio(q)
+  }, [markStarted, playArpeggio])
+
+  // (Re)start a session whenever the answerable set changes (enabled
+  // qualities or the inversions setting). Auto-plays the fresh question only
+  // if already started.
+  const contextKey = `${settings.enabled.join(',')}|${settings.inversions}`
+  useEffect(() => {
+    clearAdvance()
+    const session = new QuizSession<ChordQualityQuestion, string>({
+      generate: (previous, rng) => generateChordQualityQuestion(contextRef.current, previous, rng),
+      check: checkChordQualityAnswer,
+    })
+    sessionRef.current = session
+    session.next()
+    setQuestion(session.current)
+    setStats(session.stats)
+    setAnswer(null)
+    if (startedRef.current && session.current) playBlock(session.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextKey])
+
+  useEffect(() => () => clearAdvance(), [clearAdvance])
+
+  const advance = useCallback(() => {
+    clearAdvance()
+    const session = sessionRef.current
+    if (!session) return
+    session.next()
+    setQuestion(session.current)
+    setAnswer(null)
+    if (startedRef.current && session.current) playBlock(session.current)
+  }, [clearAdvance, playBlock])
+
+  const submit = useCallback(
+    (picked: string) => {
+      const session = sessionRef.current
+      const q = session?.current
+      if (!session || !q || session.isAnswered) return
+      const res = session.answer(picked)
+      setAnswer(picked)
+      setStats(session.stats)
+
+      setSessionStats((s) => accumulateChordQualityStat(s, q.qualityId, res.correct))
+      setLifetimeStats((s) => {
+        const next = accumulateChordQualityStat(s, q.qualityId, res.correct)
+        chordQualityStatsStore.set(next)
+        return next
+      })
+
+      if (res.correct) {
+        clearAdvance()
+        advanceTimeoutRef.current = window.setTimeout(advance, ADVANCE_MS_CORRECT_CHORD)
+      }
+    },
+    [advance, clearAdvance],
+  )
+
+  const resetStats = useCallback(() => {
+    setSessionStats({})
+    setLifetimeStats({})
+    chordQualityStatsStore.set({})
+  }, [])
+
+  const answered = answer !== null
+  const correct = answered && question !== null && answer === question.qualityId
+
+  const enabledSorted = useMemo(() => sortQualityIds(settings.enabled), [settings.enabled])
+
+  const applyPreset = (qualityIds: string[]): void =>
+    setSettings((s) => ({ ...s, enabled: [...qualityIds] }))
+
+  const toggle = (qualityId: string): void =>
+    setSettings((s) => ({ ...s, enabled: toggleQuality(s.enabled, qualityId) }))
+
+  const setInversions = (on: boolean): void => setSettings((s) => ({ ...s, inversions: on }))
+
+  return (
+    <>
+      <div className="tool-controls">
+        <div className="tool-control-group">
+          <span className="tool-control-label">Quality set</span>
+          <div className="mn-segmented" role="group" aria-label="Chord quality presets">
+            {CHORD_QUALITY_PRESETS.map((preset) => {
+              const active =
+                preset.qualityIds.length === settings.enabled.length &&
+                preset.qualityIds.every((id) => settings.enabled.includes(id))
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`mn-segment${active ? ' mn-segment-active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => applyPreset(preset.qualityIds)}
+                >
+                  {preset.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="et-chips" role="group" aria-label="Enabled chord qualities">
+            {ALL_QUALITY_IDS.map((id) => {
+              const quality = getChordQuality(id)
+              const on = settings.enabled.includes(id)
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`et-chip${on ? ' et-chip-on' : ''}`}
+                  aria-pressed={on}
+                  title={quality.name}
+                  onClick={() => toggle(id)}
+                >
+                  {qualityShort(quality)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Difficulty</span>
+          <div className="mn-segmented" role="group" aria-label="Inversions setting">
+            <button
+              type="button"
+              className={`mn-segment${settings.inversions ? ' mn-segment-active' : ''}`}
+              aria-pressed={settings.inversions}
+              onClick={() => setInversions(!settings.inversions)}
+            >
+              Include inversions (harder)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="fnt-prompt" role="status" aria-live="polite">
+        <ChordQualityPrompt question={question} answer={answer} started={started} />
+      </div>
+
+      <div className="et-transport">
+        <button type="button" className="et-play" onClick={playCurrent}>
+          {started ? '▶ Play again' : '▶ Play chord'}
+        </button>
+        <button type="button" className="et-play-secondary" onClick={playCurrentArpeggio}>
+          Play as arpeggio
+        </button>
+      </div>
+
+      <div className="et-answers" role="group" aria-label="Chord quality answers">
+        {enabledSorted.map((id) => {
+          const quality = getChordQuality(id)
+          const isCorrect = answered && question?.qualityId === id
+          const isWrongChoice = answered && !correct && answer === id
+          const cls = ['et-answer']
+          if (isCorrect) cls.push('et-answer-correct')
+          if (isWrongChoice) cls.push('et-answer-wrong')
+          return (
+            <button
+              key={id}
+              type="button"
+              className={cls.join(' ')}
+              disabled={answered}
+              onClick={() => submit(id)}
+            >
+              <span className="et-answer-short">{qualityShort(quality)}</span>
+              <span className="et-answer-full">{quality.name}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {answered && !correct && question && (
+        <div className="et-compare" role="group" aria-label="Replay to compare">
+          <p className="fnt-hint">Replay both, then continue.</p>
+          <div className="et-compare-row">
+            <button
+              type="button"
+              className="et-compare-btn"
+              onClick={() => playBlock({ ...question, qualityId: answer })}
+            >
+              Your answer ({qualityShort(getChordQuality(answer))})
+            </button>
+            <button type="button" className="et-compare-btn" onClick={() => playBlock(question)}>
+              Correct ({qualityShort(getChordQuality(question.qualityId))})
+            </button>
+          </div>
+          <button type="button" className="et-next" onClick={advance}>
+            Next question →
+          </button>
+        </div>
+      )}
+
+      <div className="fnt-score">
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">{stats.streak}</span>
+          <span className="fnt-score-label">Streak</span>
+        </div>
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">
+            {stats.correct}
+            <span className="fnt-score-sep">/</span>
+            {stats.answered}
+          </span>
+          <span className="fnt-score-label">Correct</span>
+        </div>
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">{stats.bestStreak}</span>
+          <span className="fnt-score-label">Best streak</span>
+        </div>
+      </div>
+
+      <ChordQualityStatsPanel
+        enabled={enabledSorted}
+        session={sessionStats}
+        lifetime={lifetimeStats}
+        onReset={resetStats}
+      />
+    </>
+  )
+}
+
+interface ChordQualityPromptProps {
+  question: ChordQualityQuestion | null
+  answer: string | null
+  started: boolean
+}
+
+function ChordQualityPrompt({ question, answer, started }: ChordQualityPromptProps) {
+  if (!question) return <span className="fnt-prompt-text">Loading…</span>
+
+  if (answer !== null) {
+    const correct = answer === question.qualityId
+    const quality = getChordQuality(question.qualityId)
+    const detail = question.inversion > 0 ? ` — ${inversionLabel(question.inversion)}` : ''
+    if (correct) {
+      return (
+        <span className="fnt-prompt-feedback fnt-correct">
+          Correct — {qualityShort(quality)} ({quality.name}){detail}!
+        </span>
+      )
+    }
+    return (
+      <span className="fnt-prompt-feedback fnt-wrong">
+        Not quite — that was {qualityShort(quality)} ({quality.name}){detail}.
+      </span>
+    )
+  }
+
+  if (!started) {
+    return <span className="fnt-prompt-text">Press Play to hear the chord, then name its quality.</span>
+  }
+  return (
+    <span className="fnt-prompt-text">
+      What <strong className="fnt-target">chord quality</strong> did you hear?
+    </span>
+  )
+}
+
+interface ChordQualityStatsPanelProps {
+  enabled: string[]
+  session: ChordQualityStats
+  lifetime: ChordQualityStats
+  onReset: () => void
+}
+
+/** Compact accuracy chips per enabled quality: session and lifetime tallies. */
+function ChordQualityStatsPanel({ enabled, session, lifetime, onReset }: ChordQualityStatsPanelProps) {
+  return (
+    <div className="et-stats">
+      <div className="et-stats-head">
+        <span className="tool-control-label">Per-quality accuracy</span>
+        <button type="button" className="et-reset" onClick={onReset}>
+          Reset stats
+        </button>
+      </div>
+      <div className="et-stats-grid">
+        {enabled.map((id) => {
+          const quality = getChordQuality(id)
+          const s = session[id]
+          const l = lifetime[id]
+          const sessionAcc = chordQualityAccuracy(s)
+          const lifetimeAcc = chordQualityAccuracy(l)
+          return (
+            <div key={id} className="et-stat" title={quality.name}>
+              <span className="et-stat-name">{qualityShort(quality)}</span>
+              <span className="et-stat-line">
+                <span className="et-stat-tag">Session</span>
+                {formatStat(sessionAcc, s?.attempts ?? 0)}
+              </span>
+              <span className="et-stat-line">
+                <span className="et-stat-tag">Lifetime</span>
+                {formatStat(lifetimeAcc, l?.attempts ?? 0)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
