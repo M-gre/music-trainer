@@ -59,6 +59,13 @@ import {
   type SequencePatternId,
 } from '../lib/scaleSequences.ts'
 import {
+  arpeggioQualityGroups,
+  expandArpeggio,
+  getArpeggioQuality,
+  inversionsForIntervals,
+  type Inversion,
+} from '../lib/arpeggioDrills.ts'
+import {
   ALL_PERMUTATION_PATTERNS,
   dailyPermutationSet,
   dateKey,
@@ -82,6 +89,7 @@ const DIRECTION_LABELS: Record<Direction, string> = {
 const MODE_LABELS: Record<DexterityMode, string> = {
   pattern: 'Patterns',
   scale: 'Scale sequences',
+  arpeggio: 'Arpeggios',
 }
 
 /** The twelve pitch classes as root options for the scale-sequence picker. */
@@ -104,6 +112,9 @@ export function Dexterity() {
   const [scaleRootPc, setScaleRootPc] = useState<PitchClass>(settings.scaleRootPc)
   const [scaleId, setScaleId] = useState(settings.scaleId)
   const [sequenceId, setSequenceId] = useState<SequencePatternId>(settings.sequenceId)
+  const [arpRootPc, setArpRootPc] = useState<PitchClass>(settings.arpRootPc)
+  const [arpQualityId, setArpQualityId] = useState(settings.arpQualityId)
+  const [arpInversion, setArpInversion] = useState<Inversion>(settings.arpInversion)
   const [position, setPosition] = useState(settings.position)
   const [bpm, setBpm] = useState(settings.bpm)
   const [notesPerBeat, setNotesPerBeat] = useState(settings.notesPerBeat)
@@ -121,6 +132,17 @@ export function Dexterity() {
   const patternGroups = useMemo(() => patternsByCategory(), [])
   const scale = useMemo(() => getScale(scaleId), [scaleId])
   const sequence = useMemo(() => getSequencePattern(sequenceId), [sequenceId])
+  const arpQuality = useMemo(() => getArpeggioQuality(arpQualityId), [arpQualityId])
+  const arpQualityGroups = useMemo(() => arpeggioQualityGroups(), [])
+  // 3rd inversion only offered for 4-note (7th) chords; snap back if the chord
+  // shrinks to a triad while '3rd' is selected.
+  const availableInversions = useMemo(
+    () => inversionsForIntervals(arpQuality.intervals.length),
+    [arpQuality],
+  )
+  useEffect(() => {
+    if (!availableInversions.some((i) => i.id === arpInversion)) setArpInversion('root')
+  }, [availableInversions, arpInversion])
 
   // "Today" is read from the wall clock once, here at the page level, and
   // handed to the pure daily-set generator as a plain date string — the
@@ -139,12 +161,22 @@ export function Dexterity() {
   const displayPosition = running ? positionForLoop(activeLoop, position, range) : position
 
   const displaySteps = useMemo(() => {
-    const raw =
-      mode === 'scale'
-        ? expandScaleSequence({ tuning, root: scaleRootPc, scale, patternId: sequenceId, anchor: displayPosition })
-        : expandPattern(pattern, { tuning, position: displayPosition })
+    let raw: ExerciseStep[]
+    if (mode === 'scale') {
+      raw = expandScaleSequence({ tuning, root: scaleRootPc, scale, patternId: sequenceId, anchor: displayPosition })
+    } else if (mode === 'arpeggio') {
+      raw = expandArpeggio({
+        tuning,
+        root: arpRootPc,
+        intervals: arpQuality.intervals,
+        inversion: arpInversion,
+        anchor: displayPosition,
+      })
+    } else {
+      raw = expandPattern(pattern, { tuning, position: displayPosition })
+    }
     return applyDirection(raw, direction)
-  }, [mode, pattern, tuning, scaleRootPc, scale, sequenceId, displayPosition, direction])
+  }, [mode, pattern, tuning, scaleRootPc, scale, sequenceId, arpRootPc, arpQuality, arpInversion, displayPosition, direction])
 
   // Step count + durations are independent of the position, so this timing is
   // valid for every loop; the rAF indicator and the audio callback share it.
@@ -166,6 +198,9 @@ export function Dexterity() {
   const scaleRootPcRef = useRef(scaleRootPc)
   const scaleRef = useRef(scale)
   const sequenceIdRef = useRef(sequenceId)
+  const arpRootPcRef = useRef(arpRootPc)
+  const arpQualityRef = useRef(arpQuality)
+  const arpInversionRef = useRef(arpInversion)
   patternRef.current = pattern
   tuningRef.current = tuning
   positionRef.current = position
@@ -178,6 +213,9 @@ export function Dexterity() {
   scaleRootPcRef.current = scaleRootPc
   scaleRef.current = scale
   sequenceIdRef.current = sequenceId
+  arpRootPcRef.current = arpRootPc
+  arpQualityRef.current = arpQuality
+  arpInversionRef.current = arpInversion
 
   // Persist preferences whenever they change.
   useEffect(() => {
@@ -187,6 +225,9 @@ export function Dexterity() {
       scaleRootPc,
       scaleId,
       sequenceId,
+      arpRootPc,
+      arpQualityId,
+      arpInversion,
       position,
       bpm,
       notesPerBeat,
@@ -201,6 +242,9 @@ export function Dexterity() {
     scaleRootPc,
     scaleId,
     sequenceId,
+    arpRootPc,
+    arpQualityId,
+    arpInversion,
     position,
     bpm,
     notesPerBeat,
@@ -229,16 +273,26 @@ export function Dexterity() {
     // on the active mode — a built-in pattern or a scale-sequence drill. Reads
     // everything from refs so the callback identity stays stable.
     const buildSteps = (pos: number): ExerciseStep[] => {
-      const raw =
-        modeRef.current === 'scale'
-          ? expandScaleSequence({
-              tuning: currentTuning,
-              root: scaleRootPcRef.current,
-              scale: scaleRef.current,
-              patternId: sequenceIdRef.current,
-              anchor: pos,
-            })
-          : expandPattern(patternRef.current, { tuning: currentTuning, position: pos })
+      let raw: ExerciseStep[]
+      if (modeRef.current === 'scale') {
+        raw = expandScaleSequence({
+          tuning: currentTuning,
+          root: scaleRootPcRef.current,
+          scale: scaleRef.current,
+          patternId: sequenceIdRef.current,
+          anchor: pos,
+        })
+      } else if (modeRef.current === 'arpeggio') {
+        raw = expandArpeggio({
+          tuning: currentTuning,
+          root: arpRootPcRef.current,
+          intervals: arpQualityRef.current.intervals,
+          inversion: arpInversionRef.current,
+          anchor: pos,
+        })
+      } else {
+        raw = expandPattern(patternRef.current, { tuning: currentTuning, position: pos })
+      }
       return applyDirection(raw, directionRef.current)
     }
 
@@ -336,7 +390,15 @@ export function Dexterity() {
   const markers = buildMarkers(displaySteps, running, activeStepIndex)
 
   const rootName = pcToName(scaleRootPc)
-  const title = mode === 'scale' ? `${rootName} ${scale.name} — ${sequence.name}` : pattern.name
+  const arpTitle = `${pcToName(arpRootPc)}${arpQuality.symbol} arpeggio — ${
+    availableInversions.find((i) => i.id === arpInversion)?.name ?? 'Root position'
+  }`
+  const title =
+    mode === 'scale'
+      ? `${rootName} ${scale.name} — ${sequence.name}`
+      : mode === 'arpeggio'
+        ? arpTitle
+        : pattern.name
 
   return (
     <div className="tool-page">
@@ -492,6 +554,63 @@ export function Dexterity() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {mode === 'arpeggio' && (
+          <div className="tool-control-group dx-scale-group">
+            <span className="tool-control-label">Arpeggio</span>
+            <div className="dx-scale-fields">
+              <label className="dx-scale-field">
+                <span className="tool-control-label">Root</span>
+                <select
+                  className="dx-select"
+                  value={arpRootPc}
+                  aria-label="Chord root"
+                  onChange={(e) => setArpRootPc(Number(e.target.value) as PitchClass)}
+                >
+                  {ROOT_PCS.map((pc) => (
+                    <option key={pc} value={pc}>
+                      {pcToName(pc)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="dx-scale-field">
+                <span className="tool-control-label">Quality</span>
+                <select
+                  className="dx-select"
+                  value={arpQualityId}
+                  aria-label="Chord quality"
+                  onChange={(e) => setArpQualityId(e.target.value)}
+                >
+                  {arpQualityGroups.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.qualities.map((q) => (
+                        <option key={q.id} value={q.id}>
+                          {q.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+              <label className="dx-scale-field">
+                <span className="tool-control-label">Inversion</span>
+                <select
+                  className="dx-select"
+                  value={arpInversion}
+                  aria-label="Chord inversion"
+                  onChange={(e) => setArpInversion(e.target.value as Inversion)}
+                >
+                  {availableInversions.map((inv) => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
         )}
