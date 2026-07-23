@@ -68,3 +68,4 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [ ] Mobile/touch audit: 44px minimum tap targets on fretboard/keyboard hit areas, remove hover-only affordances, touch-action on controls, verify each tool at 390px width
 - [ ] Settings page: default instrument/tuning (bass & guitar, all string counts), left-handed fretboard flip, sharps/flats preference, volume
 - [ ] Custom tuning editor: define and save arbitrary tunings (name + per-string pitch) alongside the built-ins
+- [ ] Sound audit: replace the plain dual-oscillator synth with more natural instrument voices — evaluate Karplus-Strong string synthesis for bass/guitar pluck, FM or additive synthesis for a piano-like tone, per-tool voice selection (which tool uses which voice), and consistent levels across voices; self-hosted tiny samples only as a last resort (must stay offline/CSP-clean, no CDN or runtime fetching)
