@@ -1791,3 +1791,122 @@ a.tool-card:hover {
 .nr-results .nr-scores {
   width: 100%;
 }
+
+/* ---- Diatonic Chords ---- */
+
+.dc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.dc-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.dc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: 0.6rem;
+}
+
+.dc-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  min-height: 3.75rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  font-family: inherit;
+  text-align: left;
+}
+
+.dc-card:hover {
+  border-color: var(--accent-dim);
+}
+
+.dc-card:disabled {
+  cursor: default;
+}
+
+.dc-card-selected {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.dc-card-numeral {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.dc-card-selected .dc-card-numeral {
+  color: var(--text);
+}
+
+.dc-card-symbol {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.dc-card-tones {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-card-selected .dc-card-tones {
+  color: var(--text);
+}
+
+.dc-progressions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.dc-progression-button {
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+  font-family: inherit;
+}
+
+.dc-progression-button:hover {
+  border-color: var(--accent-dim);
+}
+
+.dc-progression-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+@media (max-width: 480px) {
+  .dc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+  }
+
+  .dc-progressions {
+    flex-direction: column;
+  }
+
+  .dc-progression-button {
+    width: 100%;
+  }
+}
