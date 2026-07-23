@@ -199,6 +199,187 @@ export function emptyStats(): QuizStats {
   return { ...EMPTY_STATS }
 }
 
+// --- Find-all (multi-answer) session ---------------------------------------
+
+/**
+ * Progress within a single find-all round: how many of the required positions
+ * have been found, the total, mistakes so far, and whether the round is done.
+ */
+export interface FindAllProgress {
+  found: number
+  total: number
+  mistakes: number
+  complete: boolean
+}
+
+/** The outcome of a single `submit` on a find-all round. */
+export interface FindAllSubmitResult {
+  /**
+   * `'found'` — a required, not-yet-found target; `'already'` — a target found
+   * before (no-op); `'wrong'` — not a target (counts as a mistake).
+   */
+  outcome: 'found' | 'already' | 'wrong'
+  /** True only for the submit that finds the last remaining target. */
+  justCompleted: boolean
+  progress: FindAllProgress
+}
+
+export interface FindAllSessionOptions<Q, A> {
+  /** Pure generator for the next question (see `QuizSessionOptions`). */
+  generate: (previous: Q | null, rng: Rng) => Q
+  /**
+   * Every answer key that must be found to complete `question`. Keys are
+   * compared by string equality against `keyOf(answer)`; the caller chooses a
+   * stable encoding (e.g. `"string:fret"` or a midi number as a string).
+   */
+  targetsOf: (question: Q) => readonly string[]
+  /** Stable key for a submitted answer, compared against the targets. */
+  keyOf: (answer: A) => string
+  /** Randomness source. Defaults to `Math.random`. */
+  rng?: Rng
+}
+
+/**
+ * A "find every instance" quiz run: each question names a target (e.g. a pitch
+ * class) with several correct positions in range, and the player must click
+ * them all. Found positions stay found; a click that is not a target is a
+ * mistake but never un-finds anything. A round completes when every target is
+ * found; it counts as "correct" for the streak only if it was completed with
+ * zero mistakes.
+ *
+ * This complements `QuizSession` (single-answer) without touching it, so both
+ * models stay available. It is pure: all randomness is injected via `rng` and
+ * it never touches `window`/`document`.
+ */
+export class FindAllSession<Q, A> {
+  private readonly generate: (previous: Q | null, rng: Rng) => Q
+  private readonly targetsOf: (question: Q) => readonly string[]
+  private readonly keyOf: (answer: A) => string
+  private readonly rng: Rng
+
+  private currentQuestion: Q | null = null
+  private targets = new Set<string>()
+  private found = new Set<string>()
+  private mistakes = 0
+  /** Whether the current round has been folded into the aggregate stats. */
+  private roundClosed = false
+
+  private completedRounds = 0
+  private perfectRounds = 0
+  private currentStreak = 0
+  private bestStreakValue = 0
+
+  constructor(options: FindAllSessionOptions<Q, A>) {
+    this.generate = options.generate
+    this.targetsOf = options.targetsOf
+    this.keyOf = options.keyOf
+    this.rng = options.rng ?? Math.random
+  }
+
+  /** The question currently presented, or `null` before the first `next()`. */
+  get current(): Q | null {
+    return this.currentQuestion
+  }
+
+  /** Keys found so far in the current round (for rendering markers). */
+  get foundKeys(): readonly string[] {
+    return [...this.found]
+  }
+
+  /** Whether every target of the current round has been found. */
+  get isComplete(): boolean {
+    return this.targets.size > 0 && this.found.size >= this.targets.size
+  }
+
+  /** Progress for the current round. */
+  get progress(): FindAllProgress {
+    return {
+      found: this.found.size,
+      total: this.targets.size,
+      mistakes: this.mistakes,
+      complete: this.isComplete,
+    }
+  }
+
+  /**
+   * Aggregate progress across rounds, reusing `QuizStats`: `answered` counts
+   * completed rounds, `correct` counts rounds completed with zero mistakes,
+   * and the streak follows those perfect rounds. Timing is not tracked.
+   */
+  get stats(): QuizStats {
+    return {
+      answered: this.completedRounds,
+      correct: this.perfectRounds,
+      incorrect: this.completedRounds - this.perfectRounds,
+      streak: this.currentStreak,
+      bestStreak: this.bestStreakValue,
+      averageResponseMs: null,
+    }
+  }
+
+  /** Generate and present the next question, starting a fresh round. */
+  next(): Q {
+    const question = this.generate(this.currentQuestion, this.rng)
+    this.currentQuestion = question
+    this.targets = new Set(this.targetsOf(question))
+    this.found = new Set()
+    this.mistakes = 0
+    this.roundClosed = false
+    return question
+  }
+
+  /**
+   * Register a clicked position against the current round. Throws if called
+   * before `next()`. Folds the round into the stats exactly once, on the
+   * submit that completes it.
+   */
+  submit(answer: A): FindAllSubmitResult {
+    if (this.currentQuestion === null) throw new Error('submit() called before next()')
+
+    const key = this.keyOf(answer)
+    let outcome: 'found' | 'already' | 'wrong'
+    if (!this.targets.has(key)) {
+      if (!this.roundClosed) this.mistakes += 1
+      outcome = 'wrong'
+    } else if (this.found.has(key)) {
+      outcome = 'already'
+    } else {
+      this.found.add(key)
+      outcome = 'found'
+    }
+
+    const complete = this.isComplete
+    let justCompleted = false
+    if (complete && !this.roundClosed) {
+      this.roundClosed = true
+      justCompleted = true
+      this.completedRounds += 1
+      if (this.mistakes === 0) {
+        this.perfectRounds += 1
+        this.currentStreak += 1
+        if (this.currentStreak > this.bestStreakValue) this.bestStreakValue = this.currentStreak
+      } else {
+        this.currentStreak = 0
+      }
+    }
+
+    return { outcome, justCompleted, progress: this.progress }
+  }
+
+  /** Clear all progress and the current question, back to a fresh session. */
+  reset(): void {
+    this.currentQuestion = null
+    this.targets = new Set()
+    this.found = new Set()
+    this.mistakes = 0
+    this.roundClosed = false
+    this.completedRounds = 0
+    this.perfectRounds = 0
+    this.currentStreak = 0
+    this.bestStreakValue = 0
+  }
+}
+
 /**
  * Pick a uniformly-random element of `items`, avoiding `avoid` when doing so
  * still leaves a choice. Pure given `rng`; the building block domain

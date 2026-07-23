@@ -3,10 +3,13 @@ import {
   checkAnswer,
   createKeyboardTrainerSettingsStore,
   DEFAULT_KEYBOARD_TRAINER_SETTINGS,
+  findAllTargetKeys,
   generateQuestion,
+  keyKey,
   MAX_OCTAVE,
   normalizeTrainerSettings,
   possibleQuestions,
+  type FindAllQuestion,
   type FindQuestion,
   type NameQuestion,
   type QuestionContext,
@@ -95,7 +98,40 @@ describe('possibleQuestions', () => {
   })
 })
 
+describe('possibleQuestions (findAll)', () => {
+  it('yields one question per pitch class present, in pc order', () => {
+    const from = nameToMidi('C3')
+    const to = nameToMidi('C5')
+    const qs = possibleQuestions(ctx({ mode: 'findAll', fromMidi: from, toMidi: to })) as FindAllQuestion[]
+    expect(qs).toHaveLength(12)
+    expect(qs.map((q) => q.pc)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+  })
+
+  it('collects every matching key (all octaves) as targets', () => {
+    const from = nameToMidi('C3')
+    const to = nameToMidi('C5')
+    const qs = possibleQuestions(ctx({ mode: 'findAll', fromMidi: from, toMidi: to })) as FindAllQuestion[]
+    const c = qs.find((q) => q.pc === 0)!
+    expect(c.targets).toEqual([from, from + 12, from + 24])
+    for (const midi of c.targets) expect(midiToPc(midi)).toBe(0)
+  })
+
+  it('findAllTargetKeys uses the keyKey encoding', () => {
+    const q: FindAllQuestion = { mode: 'findAll', pc: 0, targets: [48, 60] }
+    expect(findAllTargetKeys(q)).toEqual([keyKey(48), keyKey(60)])
+    expect(keyKey(60)).toBe('60')
+  })
+})
+
 describe('generateQuestion', () => {
+  it('generates and avoids repeats in findAll mode', () => {
+    const c = ctx({ mode: 'findAll', fromMidi: nameToMidi('C3'), toMidi: nameToMidi('C5') })
+    const prev: TrainerQuestion = { mode: 'findAll', pc: 0, targets: [48, 60, 72] }
+    const next = generateQuestion(c, prev, seq(0)) as FindAllQuestion
+    expect(next.mode).toBe('findAll')
+    expect(next.pc).not.toBe(0)
+  })
+
   it('is deterministic for a given rng', () => {
     const c = ctx({ mode: 'name', fromMidi: nameToMidi('C4'), toMidi: nameToMidi('D4') })
     const a = generateQuestion(c, null, seq(0))
@@ -142,6 +178,7 @@ describe('normalizeTrainerSettings', () => {
 
   it('validates mode and accidentals', () => {
     expect(normalizeTrainerSettings({ mode: 'name' }).mode).toBe('name')
+    expect(normalizeTrainerSettings({ mode: 'findAll' }).mode).toBe('findAll')
     expect(normalizeTrainerSettings({ mode: 'bogus' }).mode).toBe('find')
     expect(normalizeTrainerSettings({ accidentals: 'flat' }).accidentals).toBe('flat')
     expect(normalizeTrainerSettings({ accidentals: 'x' }).accidentals).toBe('sharp')
@@ -156,8 +193,20 @@ describe('keyboard trainer settings store', () => {
 
   it('round-trips settings across store instances sharing a backend', () => {
     const backend = memoryBackend()
-    const written = { ...DEFAULT_KEYBOARD_TRAINER_SETTINGS, mode: 'name' as const, toOctave: 4 }
+    const written = { ...DEFAULT_KEYBOARD_TRAINER_SETTINGS, mode: 'findAll' as const, toOctave: 4 }
     createKeyboardTrainerSettingsStore(backend).set(written)
     expect(createKeyboardTrainerSettingsStore(backend).get()).toEqual(written)
+  })
+
+  it('migrates v1 data by normalizing it', () => {
+    const backend = memoryBackend()
+    backend.setItem(
+      'mt:settings:keyboard-trainer',
+      JSON.stringify({ v: 1, data: { mode: 'name', fromOctave: 2, toOctave: 6 } }),
+    )
+    const migrated = createKeyboardTrainerSettingsStore(backend).get()
+    expect(migrated.mode).toBe('name')
+    expect(migrated.fromOctave).toBe(2)
+    expect(migrated.toOctave).toBe(6)
   })
 })
