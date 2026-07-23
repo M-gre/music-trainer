@@ -25,6 +25,7 @@ import type { PitchClass } from './theory/notes.ts'
 import { mod12 } from './theory/notes.ts'
 import type { Rng } from './quiz.ts'
 import { Store, type StorageBackend } from './storage.ts'
+import { recordPractice } from './practiceLog.ts'
 
 /** Rolling stats for a single pitch class. */
 export interface NoteStat {
@@ -127,6 +128,7 @@ export function recordOutcome(
   responseMs: number | null,
   now: number,
 ): NoteStatsData {
+  recordPractice(new Date(now))
   const key = mod12(pc)
   const prev = data[key]
   const sample = correct ? 1 : 0

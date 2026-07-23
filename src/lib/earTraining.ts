@@ -20,6 +20,7 @@ import { INTERVALS, type Interval } from './theory/intervals.ts'
 import { type Midi } from './theory/notes.ts'
 import { pickAvoiding, type Rng } from './quiz.ts'
 import { Store, type StorageBackend } from './storage.ts'
+import { recordPractice } from './practiceLog.ts'
 
 // --- Intervals & register ---------------------------------------------------
 
@@ -219,6 +220,7 @@ export function accumulateStat(
   semitones: number,
   correct: boolean,
 ): IntervalStats {
+  recordPractice()
   const prev = stats[semitones] ?? { attempts: 0, correct: 0 }
   return {
     ...stats,

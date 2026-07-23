@@ -68,7 +68,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 ## M6 — Polish
 
-- [ ] Practice dashboard: streaks, per-tool stats, suggested daily routine
+- [x] Practice dashboard: streaks, per-tool stats, suggested daily routine
 - [ ] Spaced repetition for all quiz tools (shared lib)
 - [ ] PWA manifest + service worker for full offline use (self-contained, CSP-compatible)
 - [ ] Keyboard shortcuts for quiz answering; accessibility pass (focus, ARIA, contrast)

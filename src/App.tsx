@@ -13,6 +13,7 @@ import { ChordExplorer } from './pages/ChordExplorer.tsx'
 import { EarTraining } from './pages/EarTraining.tsx'
 import { Dexterity } from './pages/Dexterity.tsx'
 import { PlayAlong } from './pages/PlayAlong.tsx'
+import { PracticeDashboard } from './pages/PracticeDashboard.tsx'
 
 export interface Tool {
   route: string
@@ -29,6 +30,13 @@ export interface Tool {
  * src/pages/, register it here, and it appears on the home grid and router.
  */
 export const TOOLS: Tool[] = [
+  {
+    route: '/dashboard',
+    title: 'Practice Dashboard',
+    description: 'Your streak, per-tool stats, and a suggested daily routine.',
+    tags: ['progress'],
+    page: () => <PracticeDashboard />,
+  },
   {
     route: '/fretboard-notes',
     title: 'Fretboard Note Trainer',

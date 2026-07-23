@@ -3679,3 +3679,216 @@ a.tool-card:hover {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* ---- Practice Dashboard ---- */
+
+.db-streak {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.db-streak-figures {
+  display: flex;
+  gap: 1.75rem;
+  flex-wrap: wrap;
+}
+
+.db-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.db-figure-num {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.db-figure-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.db-dots {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.db-dot {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+}
+
+.db-dot-on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.db-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.db-section-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.db-routine {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: db-routine;
+}
+
+.db-routine-item {
+  counter-increment: db-routine;
+}
+
+.db-routine-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0.7rem 0.9rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.db-routine-link:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-dim);
+}
+
+.db-routine-link::before {
+  content: counter(db-routine);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.db-routine-text {
+  flex: 1 1 auto;
+  font-size: 0.9rem;
+}
+
+.db-routine-min {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.db-empty {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.db-empty a {
+  color: var(--accent);
+}
+
+.db-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.db-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem 0.95rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.db-stat-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-dim);
+}
+
+.db-stat-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.db-stat-headline {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.db-stat-detail {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.db-meter {
+  height: 0.4rem;
+  margin-top: 0.2rem;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.db-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+@media (max-width: 480px) {
+  .db-figure-num {
+    font-size: 1.6rem;
+  }
+}

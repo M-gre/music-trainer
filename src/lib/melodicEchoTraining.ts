@@ -23,6 +23,7 @@
 
 import type { Rng } from './quiz.ts'
 import { Store, type StorageBackend } from './storage.ts'
+import { recordPractice } from './practiceLog.ts'
 import { midiToPc, mod12, type Midi, type PitchClass } from './theory/notes.ts'
 import { getScale } from './theory/scales.ts'
 
@@ -294,6 +295,7 @@ export function accumulateStat(
   clean: boolean,
   streak: number,
 ): MelodicEchoStats {
+  recordPractice()
   return {
     attempts: stats.attempts + 1,
     clean: stats.clean + (clean ? 1 : 0),
