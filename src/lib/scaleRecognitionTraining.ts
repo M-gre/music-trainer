@@ -17,6 +17,8 @@
  */
 
 import { pickAvoiding, type Rng } from './quiz.ts'
+import { pickWeighted } from './noteStats.ts'
+import { createSrsStore, srsWeight, type SrsData } from './spacedRepetition.ts'
 import { Store, type StorageBackend } from './storage.ts'
 import { recordPractice } from './practiceLog.ts'
 import { getScale, MODE_IDS, SCALES, type Scale } from './theory/scales.ts'
@@ -125,19 +127,55 @@ export function pickScaleRoot(rng: Rng, min: Midi = ROOT_MIN, max: Midi = ROOT_M
 }
 
 /**
+ * Optional spaced-repetition picking. When supplied, `generateScaleQuestion`
+ * biases the scale choice toward the items that are due for review (see
+ * `spacedRepetition.srsWeight`) instead of drawing uniformly — still a weighted
+ * random draw, so sessions keep variety.
+ */
+export interface ScalePicking {
+  /** Per-item spaced-repetition state (keyed by `scaleSrsKey`). */
+  srs: SrsData
+  /** Wall-clock now (ms) for due-ness weighting. */
+  now: number
+}
+
+/**
+ * SRS item key for a scale answer-unit: the scale id alone. The root is
+ * randomized purely to prevent rote pitch memorization and is never part of
+ * the answer, so a scale is scheduled independently of the root it was heard
+ * on. The key is derivable straight from a question's `scaleId`.
+ */
+export function scaleSrsKey(scaleId: string): string {
+  return scaleId
+}
+
+/**
  * Generate the next scale question. The scale is chosen from `ctx.enabled`,
  * avoiding an immediate repeat when more than one is enabled; the root is
  * randomized in the register. Pure given `rng`.
+ *
+ * With `picking` supplied, the scale is drawn weighted by spaced-repetition
+ * due-ness (per `scaleSrsKey`) rather than uniformly; without it, the draw is
+ * uniform.
  */
 export function generateScaleQuestion(
   ctx: ScaleQuestionContext,
   previous: ScaleQuestion | null,
   rng: Rng,
+  picking?: ScalePicking,
 ): ScaleQuestion {
   if (ctx.enabled.length === 0) {
     throw new Error('generateScaleQuestion: no enabled scales')
   }
-  const scaleId = pickAvoiding(ctx.enabled, previous?.scaleId ?? null, rng)
+  let scaleId: string
+  if (picking) {
+    const prev = previous?.scaleId ?? null
+    const filtered = prev === null ? ctx.enabled : ctx.enabled.filter((id) => id !== prev)
+    const pool = filtered.length > 0 ? filtered : ctx.enabled
+    scaleId = pickWeighted(pool, (id) => srsWeight(picking.srs[scaleSrsKey(id)], picking.now), rng)
+  } else {
+    scaleId = pickAvoiding(ctx.enabled, previous?.scaleId ?? null, rng)
+  }
   const rootMidi = pickScaleRoot(rng, ctx.rootMin ?? ROOT_MIN, ctx.rootMax ?? ROOT_MAX)
   return { rootMidi, scaleId }
 }
@@ -312,3 +350,10 @@ export function createScaleStatsStore(backend?: StorageBackend): Store<ScaleStat
 /** App-wide localStorage-backed stores. */
 export const scaleSettingsStore = createScaleSettingsStore()
 export const scaleStatsStore = createScaleStatsStore()
+
+/**
+ * Per-item spaced-repetition schedule for scale/mode recognition
+ * (`mt:srs:ear-scale`). Keyed by `scaleSrsKey`. Tests build their own via
+ * `createSrsStore`.
+ */
+export const scaleSrsStore = createSrsStore('ear-scale')

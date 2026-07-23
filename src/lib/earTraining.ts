@@ -19,6 +19,8 @@
 import { INTERVALS, type Interval } from './theory/intervals.ts'
 import { type Midi } from './theory/notes.ts'
 import { pickAvoiding, type Rng } from './quiz.ts'
+import { pickWeighted } from './noteStats.ts'
+import { createSrsStore, srsWeight, type SrsData } from './spacedRepetition.ts'
 import { Store, type StorageBackend } from './storage.ts'
 import { recordPractice } from './practiceLog.ts'
 
@@ -124,17 +126,63 @@ export function resolvePlaybackMode(playback: PlaybackSetting, rng: Rng): Playba
 }
 
 /**
+ * Optional spaced-repetition picking. When supplied, `generateIntervalQuestion`
+ * biases the interval choice toward the items that are due for review (see
+ * `spacedRepetition.srsWeight`) instead of drawing uniformly — still a weighted
+ * random draw, so a due item is likelier but sessions keep variety. Immediate
+ * repeats are still avoided.
+ */
+export interface IntervalPicking {
+  /** Per-item spaced-repetition state (keyed by `intervalSrsKey`). */
+  srs: SrsData
+  /** Wall-clock now (ms) for due-ness weighting. */
+  now: number
+}
+
+/**
+ * SRS item key for an interval answer-unit: the semitone count plus the
+ * concrete playback mode. Direction/voicing is part of an interval's
+ * recognition difficulty — a descending or harmonic interval is a distinct
+ * challenge from the same interval ascending — so each (interval, playback)
+ * pair is scheduled separately. The key is stable and derivable straight from a
+ * question's `semitones` + `mode`.
+ */
+export function intervalSrsKey(semitones: number, mode: PlaybackMode): string {
+  return `${semitones}:${mode}`
+}
+
+/**
  * Generate the next interval question. The interval is chosen from
  * `ctx.enabled`, avoiding an immediate repeat when more than one is enabled;
  * the root is randomized in the register; the playback mode follows the
  * setting (resolving `random` per question). Pure given `rng`.
+ *
+ * With `picking` supplied, the interval is drawn weighted by spaced-repetition
+ * due-ness (per `intervalSrsKey`, i.e. per interval *and* resolved playback
+ * mode) rather than uniformly; without it, the draw is uniform.
  */
 export function generateIntervalQuestion(
   ctx: QuestionContext,
   previous: IntervalQuestion | null,
   rng: Rng,
+  picking?: IntervalPicking,
 ): IntervalQuestion {
   if (ctx.enabled.length === 0) throw new Error('generateIntervalQuestion: no enabled intervals')
+  if (picking) {
+    // Resolve the playback mode first so the SRS key (which includes it) is
+    // known while weighting the candidate intervals.
+    const mode = resolvePlaybackMode(ctx.playback, rng)
+    const filtered =
+      previous === null ? ctx.enabled : ctx.enabled.filter((s) => s !== previous.semitones)
+    const pool = filtered.length > 0 ? filtered : ctx.enabled
+    const semitones = pickWeighted(
+      pool,
+      (s) => srsWeight(picking.srs[intervalSrsKey(s, mode)], picking.now),
+      rng,
+    )
+    const rootMidi = pickRoot(rng, ctx.rootMin ?? ROOT_MIN, ctx.rootMax ?? ROOT_MAX)
+    return { rootMidi, semitones, mode }
+  }
   const semitones = pickAvoiding(ctx.enabled, previous?.semitones ?? null, rng)
   const rootMidi = pickRoot(rng, ctx.rootMin ?? ROOT_MIN, ctx.rootMax ?? ROOT_MAX)
   const mode = resolvePlaybackMode(ctx.playback, rng)
@@ -341,3 +389,10 @@ export function createIntervalStatsStore(backend?: StorageBackend): Store<Interv
 /** App-wide localStorage-backed stores. */
 export const earTrainingSettingsStore = createEarTrainingSettingsStore()
 export const intervalStatsStore = createIntervalStatsStore()
+
+/**
+ * Per-item spaced-repetition schedule for interval recognition
+ * (`mt:srs:ear-interval`). Keyed by `intervalSrsKey`. Tests build their own via
+ * `createSrsStore`.
+ */
+export const intervalSrsStore = createSrsStore('ear-interval')

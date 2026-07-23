@@ -23,12 +23,14 @@ import {
   ROOT_MIN,
   scaleLabel,
   scaleShort,
+  scaleSrsKey,
   SCALE_PRESETS,
   sortScaleIds,
   toggleScale,
   type ScaleQuestion,
   type ScaleQuestionContext,
 } from './scaleRecognitionTraining.ts'
+import { STEP_MS, type SrsData, type SrsItem } from './spacedRepetition.ts'
 
 /** Deterministic rng cycling through the given values in [0,1). */
 function seq(values: number[]): Rng {
@@ -38,6 +40,20 @@ function seq(values: number[]): Rng {
     i += 1
     return v
   }
+}
+
+/** A seeded LCG for distribution tests — deterministic but well-spread. */
+function lcg(seed: number): Rng {
+  let state = seed >>> 0
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+}
+
+/** A reviewed SRS item due at `due` (reviewed once, seen at `due`). */
+function srsItem(due: number): SrsItem {
+  return { interval: 1, ease: 2.5, due, lapses: 0, reps: 1, lastSeen: due }
 }
 
 describe('scaleLabel / scaleShort', () => {
@@ -182,6 +198,66 @@ describe('generateScaleQuestion', () => {
 
   it('throws when nothing is enabled', () => {
     expect(() => generateScaleQuestion({ enabled: [] }, null, () => 0)).toThrow()
+  })
+})
+
+describe('scaleSrsKey', () => {
+  it('is the scale id (root never part of the schedule)', () => {
+    expect(scaleSrsKey('dorian')).toBe('dorian')
+    expect(scaleSrsKey('blues')).toBe('blues')
+  })
+})
+
+describe('generateScaleQuestion — SRS-influenced picking', () => {
+  const NOW = 1_000_000
+  const ctx: ScaleQuestionContext = { enabled: ['major', 'minor', 'dorian', 'blues'] }
+
+  function counts(srs: SrsData, n: number): Map<string, number> {
+    const rng = lcg(13579)
+    const out = new Map<string, number>()
+    for (let i = 0; i < n; i += 1) {
+      const q = generateScaleQuestion(ctx, null, rng, { srs, now: NOW })
+      out.set(q.scaleId, (out.get(q.scaleId) ?? 0) + 1)
+    }
+    return out
+  }
+
+  it('only produces enabled scales when picking', () => {
+    const rng = lcg(5)
+    let prev: ScaleQuestion | null = null
+    for (let i = 0; i < 40; i += 1) {
+      const q = generateScaleQuestion(ctx, prev, rng, { srs: {}, now: NOW })
+      expect(ctx.enabled).toContain(q.scaleId)
+      prev = q
+    }
+  })
+
+  it('avoids an immediate repeat when picking with more than one enabled', () => {
+    const rng = lcg(17)
+    let prev: ScaleQuestion | null = null
+    for (let i = 0; i < 60; i += 1) {
+      const q = generateScaleQuestion(ctx, prev, rng, { srs: {}, now: NOW })
+      if (prev) expect(q.scaleId).not.toBe(prev.scaleId)
+      prev = q
+    }
+  })
+
+  it('favors an overdue scale over one not yet due', () => {
+    const srs: SrsData = {
+      blues: srsItem(NOW - 5 * STEP_MS), // very overdue
+      major: srsItem(NOW + 100 * STEP_MS),
+      minor: srsItem(NOW + 100 * STEP_MS),
+      dorian: srsItem(NOW + 100 * STEP_MS),
+    }
+    const c = counts(srs, 4000)
+    expect(c.get('blues') ?? 0).toBeGreaterThan((c.get('major') ?? 0) * 3)
+  })
+
+  it('favors never-seen scales over one not yet due', () => {
+    const srs: SrsData = { major: srsItem(NOW + 100 * STEP_MS) }
+    const c = counts(srs, 4000)
+    const newAvg = ['minor', 'dorian', 'blues'].reduce((sum, id) => sum + (c.get(id) ?? 0), 0) / 3
+    expect(newAvg).toBeGreaterThan((c.get('major') ?? 0) * 2)
   })
 })
 

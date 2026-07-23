@@ -7,6 +7,7 @@ import {
   accuracy,
   ALL_QUALITY_IDS,
   checkChordQualityAnswer,
+  chordQualitySrsKey,
   CHORD_QUALITY_PRESETS,
   createChordQualitySettingsStore,
   createChordQualityStatsStore,
@@ -28,6 +29,7 @@ import {
   type ChordQualityContext,
   type ChordQualityQuestion,
 } from './chordQualityTraining.ts'
+import { STEP_MS, type SrsData, type SrsItem } from './spacedRepetition.ts'
 
 /** Deterministic rng cycling through the given values in [0,1). */
 function seq(values: number[]): Rng {
@@ -37,6 +39,20 @@ function seq(values: number[]): Rng {
     i += 1
     return v
   }
+}
+
+/** A seeded LCG for distribution tests — deterministic but well-spread. */
+function lcg(seed: number): Rng {
+  let state = seed >>> 0
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+}
+
+/** A reviewed SRS item due at `due` (reviewed once, seen at `due`). */
+function srsItem(due: number): SrsItem {
+  return { interval: 1, ease: 2.5, due, lapses: 0, reps: 1, lastSeen: due }
 }
 
 describe('qualityLabel / qualityShort', () => {
@@ -190,6 +206,66 @@ describe('generateChordQualityQuestion', () => {
     expect(() =>
       generateChordQualityQuestion({ enabled: [], inversions: false }, null, () => 0),
     ).toThrow()
+  })
+})
+
+describe('chordQualitySrsKey', () => {
+  it('is the quality id (inversion never part of the schedule)', () => {
+    expect(chordQualitySrsKey('min7')).toBe('min7')
+    expect(chordQualitySrsKey('dim')).toBe('dim')
+  })
+})
+
+describe('generateChordQualityQuestion — SRS-influenced picking', () => {
+  const NOW = 1_000_000
+  const ctx: ChordQualityContext = { enabled: ['maj', 'min', 'dim', 'aug'], inversions: false }
+
+  function counts(srs: SrsData, n: number): Map<string, number> {
+    const rng = lcg(24680)
+    const out = new Map<string, number>()
+    for (let i = 0; i < n; i += 1) {
+      const q = generateChordQualityQuestion(ctx, null, rng, { srs, now: NOW })
+      out.set(q.qualityId, (out.get(q.qualityId) ?? 0) + 1)
+    }
+    return out
+  }
+
+  it('only produces enabled qualities when picking', () => {
+    const rng = lcg(3)
+    let prev: ChordQualityQuestion | null = null
+    for (let i = 0; i < 40; i += 1) {
+      const q = generateChordQualityQuestion(ctx, prev, rng, { srs: {}, now: NOW })
+      expect(ctx.enabled).toContain(q.qualityId)
+      prev = q
+    }
+  })
+
+  it('avoids an immediate repeat when picking with more than one enabled', () => {
+    const rng = lcg(11)
+    let prev: ChordQualityQuestion | null = null
+    for (let i = 0; i < 60; i += 1) {
+      const q = generateChordQualityQuestion(ctx, prev, rng, { srs: {}, now: NOW })
+      if (prev) expect(q.qualityId).not.toBe(prev.qualityId)
+      prev = q
+    }
+  })
+
+  it('favors an overdue quality over one not yet due', () => {
+    const srs: SrsData = {
+      dim: srsItem(NOW - 5 * STEP_MS), // very overdue
+      maj: srsItem(NOW + 100 * STEP_MS),
+      min: srsItem(NOW + 100 * STEP_MS),
+      aug: srsItem(NOW + 100 * STEP_MS),
+    }
+    const c = counts(srs, 4000)
+    expect(c.get('dim') ?? 0).toBeGreaterThan((c.get('maj') ?? 0) * 3)
+  })
+
+  it('favors never-seen qualities over one not yet due', () => {
+    const srs: SrsData = { maj: srsItem(NOW + 100 * STEP_MS) }
+    const c = counts(srs, 4000)
+    const newAvg = ['min', 'dim', 'aug'].reduce((sum, id) => sum + (c.get(id) ?? 0), 0) / 3
+    expect(newAvg).toBeGreaterThan((c.get('maj') ?? 0) * 2)
   })
 })
 
