@@ -5019,3 +5019,13 @@ summary:focus-visible,
 .pa-style-seg {
   flex-wrap: wrap;
 }
+
+/* ---- Play-Along key mode switch ---- */
+
+.pa-mode-label {
+  margin-top: 0.75rem;
+}
+
+.pa-mode-seg {
+  flex-wrap: wrap;
+}

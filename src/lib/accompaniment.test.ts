@@ -18,6 +18,7 @@ import {
   MAX_CUSTOM_DEGREES,
   normalizeAccompanimentSettings,
   parseDegrees,
+  progressionPresetsForMode,
   progressionTotalBars,
   PROGRESSION_PRESETS,
   resolveAccompaniment,
@@ -84,6 +85,48 @@ describe('resolveProgressionChords', () => {
     ])
     expect(chords.map((c) => c.symbol)).toEqual(['C7', 'F7', 'G7'])
     expect(chords.map((c) => c.quality.id)).toEqual(['dom7', 'dom7', 'dom7'])
+  })
+
+  it('resolves natural-minor degree qualities (A minor: i minor, III/VI/VII major, ii° dim)', () => {
+    const chords = resolveProgressionChords(9, [
+      { degree: 1 },
+      { degree: 2 },
+      { degree: 3 },
+      { degree: 4 },
+      { degree: 5 },
+      { degree: 6 },
+      { degree: 7 },
+    ], 'minor')
+    expect(chords.map((c) => c.symbol)).toEqual(['Am', 'Bdim', 'C', 'Dm', 'Em', 'F', 'G'])
+    expect(chords.map((c) => c.quality.id)).toEqual([
+      'min', 'dim', 'maj', 'min', 'min', 'maj', 'maj',
+    ])
+  })
+
+  it('spells a natural-minor key via its relative major signature (G minor → flats)', () => {
+    // G minor shares B♭ major's two flats: G, A, B♭, C, D, E♭, F.
+    const chords = resolveProgressionChords(7, [
+      { degree: 1 },
+      { degree: 3 },
+      { degree: 6 },
+    ], 'minor')
+    expect(chords.map((c) => c.symbol)).toEqual(['Gm', 'Bb', 'Eb'])
+  })
+
+  it('spells E minor with sharps (relative G major, one sharp)', () => {
+    const chords = resolveProgressionChords(4, [{ degree: 1 }, { degree: 4 }], 'minor')
+    expect(chords.map((c) => c.symbol)).toEqual(['Em', 'Am'])
+    // the natural-minor VII of E minor is D major (its leading region), spelled
+    // with the sharp-side letter run — no flats leak in.
+    const seven = resolveProgressionChords(4, [{ degree: 7 }], 'minor')
+    expect(seven[0]!.symbol).toBe('D')
+  })
+
+  it('makes the harmonic-minor V a major (dominant) triad', () => {
+    // A harmonic minor raises the 7th (G→G#), so V = E G# B is major.
+    const chords = resolveProgressionChords(9, [{ degree: 1 }, { degree: 4 }, { degree: 5 }], 'harmonic-minor')
+    expect(chords.map((c) => c.symbol)).toEqual(['Am', 'Dm', 'E'])
+    expect(chords[2]!.quality.id).toBe('maj')
   })
 })
 
@@ -449,6 +492,7 @@ describe('normalizeAccompanimentSettings', () => {
     const value: AccompanimentSettings = {
       enabled: true,
       rootPc: 7,
+      keyMode: 'minor',
       progressionId: 'ii-V-I',
       customDegrees: '2-5-1',
       barsPerChord: 2,
@@ -463,6 +507,7 @@ describe('normalizeAccompanimentSettings', () => {
     expect(
       normalizeAccompanimentSettings({
         rootPc: 15,
+        keyMode: 'nonsense',
         progressionId: 'bogus',
         barsPerChord: 9,
         style: 'weird',
@@ -472,6 +517,14 @@ describe('normalizeAccompanimentSettings', () => {
       rootPc: 3, // 15 mod 12
       barsPerChord: 2,
     })
+  })
+
+  it('keeps a valid keyMode and defaults an invalid one to major', () => {
+    expect(normalizeAccompanimentSettings({ keyMode: 'harmonic-minor' }).keyMode).toBe(
+      'harmonic-minor',
+    )
+    expect(normalizeAccompanimentSettings({ keyMode: 'minor' }).keyMode).toBe('minor')
+    expect(normalizeAccompanimentSettings({}).keyMode).toBe('major')
   })
 })
 
@@ -490,10 +543,61 @@ describe('keyOptions', () => {
 })
 
 describe('PROGRESSION_PRESETS', () => {
-  it('every preset resolves to at least one chord in C major', () => {
+  it('every preset resolves to at least one chord in its own mode', () => {
     for (const preset of PROGRESSION_PRESETS) {
-      const chords = resolveProgressionChords(0, preset.specs)
+      const chords = resolveProgressionChords(0, preset.specs, preset.mode)
       expect(chords.length).toBeGreaterThan(0)
     }
+  })
+
+  it('filters presets by mode, and every preset belongs to exactly one shown group', () => {
+    const major = progressionPresetsForMode('major').map((p) => p.id)
+    const minor = progressionPresetsForMode('minor').map((p) => p.id)
+    const harmonic = progressionPresetsForMode('harmonic-minor').map((p) => p.id)
+    expect(major).toEqual(['I-V-vi-IV', 'ii-V-I', 'I-IV-V-I', 'vi-IV-I-V', 'blues-12'])
+    expect(minor).toEqual(['i-VI-III-VII', 'i-iv-v', 'minor-blues-12'])
+    expect(harmonic).toEqual(['i-iv-V'])
+    // Partition: the three groups together cover every preset with no overlap.
+    expect(major.length + minor.length + harmonic.length).toBe(PROGRESSION_PRESETS.length)
+  })
+
+  it('resolves the natural-minor presets in A minor', () => {
+    const r = resolveAccompaniment(
+      settings({ progressionId: 'i-VI-III-VII', keyMode: 'minor', rootPc: 9 }),
+    )
+    expect(r.chords.map((c) => c.symbol)).toEqual(['Am', 'F', 'C', 'G'])
+  })
+
+  it('resolves the 12-bar minor blues with dominant turnaround Vs, locked to 1 bar', () => {
+    const r = resolveAccompaniment(
+      settings({ progressionId: 'minor-blues-12', keyMode: 'minor', rootPc: 9, barsPerChord: 2 }),
+    )
+    expect(r.barsPerChord).toBe(1)
+    expect(r.barsPerChordLocked).toBe(true)
+    expect(r.chords).toHaveLength(12)
+    expect(r.chords.map((c) => c.symbol)).toEqual([
+      'Am', 'Dm', 'Am', 'Am', 'Dm', 'Dm', 'Am', 'Am', 'F', 'E7', 'Am', 'E7',
+    ])
+  })
+
+  it('resolves the harmonic-minor i–iv–V with a major V in A minor', () => {
+    const r = resolveAccompaniment(
+      settings({ progressionId: 'i-iv-V', keyMode: 'harmonic-minor', rootPc: 9 }),
+    )
+    expect(r.chords.map((c) => c.symbol)).toEqual(['Am', 'Dm', 'E'])
+  })
+})
+
+describe('mode-aware custom progressions', () => {
+  it('re-resolves the same custom degrees when the mode switches', () => {
+    const major = resolveAccompaniment(
+      settings({ progressionId: CUSTOM_PROGRESSION_ID, customDegrees: '1-4-5', rootPc: 9, keyMode: 'major' }),
+    )
+    const minor = resolveAccompaniment(
+      settings({ progressionId: CUSTOM_PROGRESSION_ID, customDegrees: '1-4-5', rootPc: 9, keyMode: 'minor' }),
+    )
+    // Same degrees, different qualities per mode: A major (A/D/E) vs A minor (Am/Dm/Em).
+    expect(major.chords.map((c) => c.symbol)).toEqual(['A', 'D', 'E'])
+    expect(minor.chords.map((c) => c.symbol)).toEqual(['Am', 'Dm', 'Em'])
   })
 })
