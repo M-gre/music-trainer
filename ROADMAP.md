@@ -61,7 +61,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [x] Permutation generator: all 24 finger orderings, random daily set
 - [x] Scale-sequence drills: run any scale through sequence patterns (diatonic 3rds and 4ths, groups-of-3, groups-of-4, up-and-back) in a position, rendered with fingering and metronome sync
 - [x] Arpeggio drills: triad and 7th-chord arpeggios across strings and positions (root position + inversions), tuning-aware
-- [ ] Rhythm variation layer: apply rhythm patterns to any exercise — straight, triplets, gallop (1e&a variants), dotted, offbeat starts — plus accent-every-N-notes displacement drills
+- [x] Rhythm variation layer: apply rhythm patterns to any exercise — straight, triplets, gallop (1e&a variants), dotted, offbeat starts — plus accent-every-N-notes displacement drills
 - [ ] Stretch & finger-independence drills: wide-stretch patterns (1-2-4, 1-3-4, 5-fret spans), hold-anchor-finger drills, legato patterns (hammer-on/pull-off sequences shown with slur marking)
 - [ ] Warm-up routine builder: compose a timed daily routine from selected exercises (per-exercise duration/loops, auto-advance to the next exercise, total time display), persist favorite routines
 - [ ] Piano exercises: 5-finger patterns, scale fingerings with correct finger numbers displayed on Keyboard

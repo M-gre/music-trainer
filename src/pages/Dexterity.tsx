@@ -34,7 +34,6 @@ import {
   MAX_FRET,
   MIN_BPM,
   MIN_FRET,
-  NOTES_PER_BEAT_OPTIONS,
   normalizeDexteritySettings,
   type DexterityMode,
 } from '../lib/dexteritySettings.ts'
@@ -46,10 +45,21 @@ import {
   locateStep,
   patternsByCategory,
   positionForLoop,
-  stepTimings,
   type Direction,
   type ExerciseStep,
 } from '../lib/exercises.ts'
+import {
+  ACCENT_EVERY_N_OPTIONS,
+  type AccentEveryN,
+  applyAccent,
+  getRhythm,
+  noteDurationsTicks,
+  RHYTHM_RESOLUTION,
+  RHYTHMS,
+  rhythmizeSteps,
+  rhythmTiming,
+  type RhythmId,
+} from '../lib/rhythmVariations.ts'
 import { midiToName, pcToName, type PitchClass } from '../lib/theory/notes.ts'
 import { getScale, SCALES } from '../lib/theory/scales.ts'
 import {
@@ -73,11 +83,12 @@ import {
   isPermutationId,
 } from '../lib/permutations.ts'
 
-const NOTES_PER_BEAT_LABELS: Record<number, string> = {
-  1: 'Quarter',
-  2: 'Eighth',
-  3: 'Triplet',
-  4: 'Sixteenth',
+/** Labels for the accent-every-N control (0 = the accent layer is off). */
+const ACCENT_LABELS: Record<number, string> = {
+  0: 'Off',
+  2: '2',
+  3: '3',
+  4: '4',
 }
 
 const DIRECTION_LABELS: Record<Direction, string> = {
@@ -117,7 +128,8 @@ export function Dexterity() {
   const [arpInversion, setArpInversion] = useState<Inversion>(settings.arpInversion)
   const [position, setPosition] = useState(settings.position)
   const [bpm, setBpm] = useState(settings.bpm)
-  const [notesPerBeat, setNotesPerBeat] = useState(settings.notesPerBeat)
+  const [rhythmId, setRhythmId] = useState<RhythmId>(settings.rhythmId)
+  const [accentEveryN, setAccentEveryN] = useState<AccentEveryN>(settings.accentEveryN)
   const [autoAdvance, setAutoAdvance] = useState(settings.autoAdvance)
   const [advanceMin, setAdvanceMin] = useState(settings.advanceMin)
   const [advanceMax, setAdvanceMax] = useState(settings.advanceMax)
@@ -130,6 +142,7 @@ export function Dexterity() {
 
   const pattern = useMemo(() => getPermutationPattern(patternId) ?? getPattern(patternId), [patternId])
   const patternGroups = useMemo(() => patternsByCategory(), [])
+  const rhythm = useMemo(() => getRhythm(rhythmId), [rhythmId])
   const scale = useMemo(() => getScale(scaleId), [scaleId])
   const sequence = useMemo(() => getSequencePattern(sequenceId), [sequenceId])
   const arpQuality = useMemo(() => getArpeggioQuality(arpQualityId), [arpQualityId])
@@ -178,9 +191,17 @@ export function Dexterity() {
     return applyDirection(raw, direction)
   }, [mode, pattern, tuning, scaleRootPc, scale, sequenceId, arpRootPc, arpQuality, arpInversion, displayPosition, direction])
 
-  // Step count + durations are independent of the position, so this timing is
-  // valid for every loop; the rAF indicator and the audio callback share it.
-  const timing = useMemo(() => stepTimings(displaySteps), [displaySteps])
+  // Lay the steps onto the chosen rhythm, then apply the accent layer. The
+  // rhythmized events drive the strip's accent emphasis; their grid timing (at
+  // the fine RHYTHM_RESOLUTION) is shared by the rAF indicator and the audio
+  // callback. Step count is independent of the position, so this is valid for
+  // every loop.
+  const rhythmized = useMemo(() => rhythmizeSteps(displaySteps, rhythm), [displaySteps, rhythm])
+  const displayEvents = useMemo(
+    () => applyAccent(rhythmized.events, accentEveryN),
+    [rhythmized, accentEveryN],
+  )
+  const timing = useMemo(() => rhythmTiming(rhythmized), [rhythmized])
   const timingRef = useRef(timing)
   timingRef.current = timing
 
@@ -190,7 +211,8 @@ export function Dexterity() {
   const tuningRef = useRef(tuning)
   const positionRef = useRef(position)
   const rangeRef = useRef(range)
-  const notesPerBeatRef = useRef(notesPerBeat)
+  const rhythmRef = useRef(rhythm)
+  const accentNRef = useRef(accentEveryN)
   const bpmRef = useRef(bpm)
   const clickRef = useRef(clickOn)
   const directionRef = useRef(direction)
@@ -205,7 +227,8 @@ export function Dexterity() {
   tuningRef.current = tuning
   positionRef.current = position
   rangeRef.current = range
-  notesPerBeatRef.current = notesPerBeat
+  rhythmRef.current = rhythm
+  accentNRef.current = accentEveryN
   bpmRef.current = bpm
   clickRef.current = clickOn
   directionRef.current = direction
@@ -230,7 +253,8 @@ export function Dexterity() {
       arpInversion,
       position,
       bpm,
-      notesPerBeat,
+      rhythmId,
+      accentEveryN,
       autoAdvance,
       advanceMin,
       advanceMax,
@@ -247,20 +271,20 @@ export function Dexterity() {
     arpInversion,
     position,
     bpm,
-    notesPerBeat,
+    rhythmId,
+    accentEveryN,
     autoAdvance,
     advanceMin,
     advanceMax,
     direction,
   ])
 
-  // Apply tempo / subdivision changes to a live scheduler without stopping it.
+  // Apply tempo changes to a live scheduler without stopping it. The grid runs
+  // at a fixed fine resolution (RHYTHM_RESOLUTION), so rhythm changes need no
+  // meter change — the audio callback re-reads the rhythm from a ref.
   useEffect(() => {
     schedulerRef.current?.setTempo(bpm)
   }, [bpm])
-  useEffect(() => {
-    schedulerRef.current?.setMeter({ subdivisionsPerBeat: notesPerBeat })
-  }, [notesPerBeat])
 
   // Per grid-step: play the current step's note (on its onset) plus an optional
   // metronome click on the beat. Reads everything from refs so its identity is
@@ -296,25 +320,31 @@ export function Dexterity() {
       return applyDirection(raw, directionRef.current)
     }
 
-    const stepList = buildSteps(positionRef.current)
-    const loopTiming = stepTimings(stepList)
+    // Rhythmize this loop's steps and locate the current fine-grid step within
+    // the rhythm's timing; notes sound only on an onset tick.
+    const seq = rhythmizeSteps(buildSteps(positionRef.current), rhythmRef.current)
+    const loopTiming = rhythmTiming(seq)
     const loc = locateStep(event.step, loopTiming)
-    if (!loc) return
 
-    if (loc.isOnset) {
+    if (loc && loc.isOnset) {
       const loopPosition = positionForLoop(loc.loop, positionRef.current, rangeRef.current)
       const notes = buildSteps(loopPosition)
       const step = notes[loc.stepIndex]
       if (step) {
-        const stepSeconds = secondsPerSubdivision(bpmRef.current, notesPerBeatRef.current)
-        engine.playNote(step.midi, step.duration * stepSeconds * NOTE_LENGTH, { when, velocity: 0.9 })
+        const events = applyAccent(seq.events, accentNRef.current)
+        const accent = events[loc.stepIndex]?.accent ?? false
+        const durTicks = noteDurationsTicks(loopTiming)[loc.stepIndex] ?? 1
+        const seconds = durTicks * secondsPerSubdivision(bpmRef.current, RHYTHM_RESOLUTION) * NOTE_LENGTH
+        // Accented notes hit harder for an audible pulse/displacement feel.
+        engine.playNote(step.midi, seconds, { when, velocity: accent ? 1 : 0.68 })
       }
     }
 
-    // Metronome pulse on the beat (grid subdivision 0), quieter off-beats.
-    if (clickRef.current) {
-      const level = event.subdivision === 0 ? 'high' : 'low'
-      const spec = resolveClickParams(DEFAULT_CLICK_VOICE_ID, level, event.subdivision !== 0)
+    // Metronome pulse once per beat (grid subdivision 0), accented on the
+    // bar's downbeat; the rhythm's own notes carry the subdivision feel.
+    if (clickRef.current && event.subdivision === 0) {
+      const level = event.beat === 0 ? 'high' : 'low'
+      const spec = resolveClickParams(DEFAULT_CLICK_VOICE_ID, level, event.beat !== 0)
       if (spec) engine.playClick({ ...spec, when })
     }
   }, [])
@@ -343,13 +373,13 @@ export function Dexterity() {
       scheduler = new Scheduler(engine, {
         bpm: bpmRef.current,
         beatsPerBar: 4,
-        subdivisionsPerBeat: notesPerBeatRef.current,
+        subdivisionsPerBeat: RHYTHM_RESOLUTION,
         onEvent: handleEvent,
       })
       schedulerRef.current = scheduler
     } else {
       scheduler.setTempo(bpmRef.current)
-      scheduler.setMeter({ beatsPerBar: 4, subdivisionsPerBeat: notesPerBeatRef.current })
+      scheduler.setMeter({ beatsPerBar: 4, subdivisionsPerBeat: RHYTHM_RESOLUTION })
     }
     setActiveStepIndex(null)
     setActiveLoop(0)
@@ -659,20 +689,42 @@ export function Dexterity() {
         </div>
 
         <div className="tool-control-group">
-          <span className="tool-control-label">Notes per beat</span>
-          <div className="dx-segmented" role="group">
-            {NOTES_PER_BEAT_OPTIONS.map((n) => (
+          <span className="tool-control-label">Rhythm</span>
+          <select
+            className="dx-select"
+            value={rhythmId}
+            aria-label="Rhythm pattern"
+            onChange={(e) => setRhythmId(e.target.value as RhythmId)}
+          >
+            {RHYTHMS.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <span className="dx-rhythm-desc">{rhythm.description}</span>
+        </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Accent every N notes</span>
+          <div className="dx-segmented" role="group" aria-label="Accent every N notes">
+            {ACCENT_EVERY_N_OPTIONS.map((n) => (
               <button
                 key={n}
                 type="button"
-                className={`dx-segment${n === notesPerBeat ? ' dx-segment-active' : ''}`}
-                aria-pressed={n === notesPerBeat}
-                onClick={() => setNotesPerBeat(n)}
+                className={`dx-segment${n === accentEveryN ? ' dx-segment-active' : ''}`}
+                aria-pressed={n === accentEveryN}
+                onClick={() => setAccentEveryN(n)}
               >
-                {NOTES_PER_BEAT_LABELS[n] ?? String(n)}
+                {ACCENT_LABELS[n] ?? String(n)}
               </button>
             ))}
           </div>
+          <span className="dx-rhythm-desc">
+            {accentEveryN === 0
+              ? 'Natural pulse — first note of each beat accented.'
+              : `Accents every ${accentEveryN} notes for a displacement drill.`}
+          </span>
         </div>
 
         <div className="tool-control-group">
@@ -777,11 +829,12 @@ export function Dexterity() {
       <div className="dx-strip" role="list" aria-label="Exercise step sequence">
         {displaySteps.map((step, i) => {
           const active = running && i === activeStepIndex
+          const accented = displayEvents[i]?.accent ?? false
           return (
             <div
               key={`${i}-${step.string}-${step.fret}`}
               role="listitem"
-              className={`dx-strip-step${active ? ' dx-strip-active' : ''}`}
+              className={`dx-strip-step${active ? ' dx-strip-active' : ''}${accented ? ' dx-strip-accent' : ''}`}
             >
               <span className="dx-strip-order">{i + 1}</span>
               <span className="dx-strip-finger">{step.finger}</span>
