@@ -17,6 +17,8 @@ import { Fretboard } from '../components/Fretboard.tsx'
 import { Keyboard } from '../components/Keyboard.tsx'
 import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
 import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
+import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
+import { applySpellingPreference } from '../lib/globalSettings.ts'
 import { getAudioEngine } from '../lib/audio/index.ts'
 import { getScale, MODE_IDS, SCALES } from '../lib/theory/scales.ts'
 import { pcToName } from '../lib/theory/notes.ts'
@@ -48,13 +50,20 @@ const PITCH_CLASSES = Array.from({ length: 12 }, (_, i) => i)
 const MODE_SCALES = SCALES.filter((s) => (MODE_IDS as readonly string[]).includes(s.id))
 const OTHER_SCALES = SCALES.filter((s) => !(MODE_IDS as readonly string[]).includes(s.id))
 
-function rootLabel(pc: number): string {
-  return pcToName(pc, prefersFlats(pc) ? 'flat' : 'sharp')
-}
-
 export function ScalesExplorer() {
   const engineRef = useRef(getAudioEngine())
   const { tuning, setTuningId } = useInstrumentSettings()
+  const { settings: globalSettings } = useGlobalSettings()
+  const spellingPreference = globalSettings.spellingPreference
+
+  // The global sharps/flats preference overrides each note's context-derived
+  // accidental. `'auto'` keeps the context choice, so today's per-note spelling
+  // (Eb, F#, …) is unchanged unless the user opted into a fixed accidental.
+  const rootLabel = useCallback(
+    (pc: number): string =>
+      pcToName(pc, applySpellingPreference(spellingPreference, prefersFlats(pc) ? 'flat' : 'sharp')),
+    [spellingPreference],
+  )
 
   const [settings, setSettings] = useState(() =>
     normalizeScaleExplorerSettings(scaleExplorerSettingsStore.get()),
@@ -71,10 +80,20 @@ export function ScalesExplorer() {
 
   const { rootPc, scaleId, display, fullRange } = settings
   const scale = useMemo(() => getScale(scaleId), [scaleId])
-  const prefer: AccidentalPreference = prefersFlats(rootPc) ? 'flat' : 'sharp'
+  const prefer: AccidentalPreference = applySpellingPreference(
+    spellingPreference,
+    prefersFlats(rootPc) ? 'flat' : 'sharp',
+  )
   const toFret = fullRange ? 24 : 12
 
-  const noteNames = useMemo(() => scaleNoteNames(rootPc, scale), [rootPc, scale])
+  // With a forced preference, spell the info-line notes plainly (pcToName) so
+  // they match the markers; with `'auto'` keep the letter-correct scale
+  // spelling (F major = F G A Bb C D E), unchanged from before.
+  const forcedPrefer = spellingPreference === 'auto' ? undefined : prefer
+  const noteNames = useMemo(
+    () => scaleNoteNames(rootPc, scale, forcedPrefer),
+    [rootPc, scale, forcedPrefer],
+  )
   const degrees = useMemo(() => scaleDegreeLabels(scale.intervals), [scale])
   const stepPattern = useMemo(() => scaleStepPattern(scale.intervals), [scale])
 

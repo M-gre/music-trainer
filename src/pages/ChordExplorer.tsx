@@ -37,6 +37,8 @@ import {
 import { CHORD_QUALITIES, getChordQuality, type ChordQuality } from '../lib/theory/chords.ts'
 import { pcToName, type PitchClass } from '../lib/theory/notes.ts'
 import { prefersFlats } from '../lib/theory/spell.ts'
+import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
+import { applySpellingPreference } from '../lib/globalSettings.ts'
 
 const ROOTS: PitchClass[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
@@ -58,8 +60,15 @@ export function ChordExplorer() {
   const [labelMode, setLabelMode] = useState<ChordLabelMode>('interval')
   const [busy, setBusy] = useState(false)
 
+  const { settings: globalSettings } = useGlobalSettings()
+
   const quality = getChordQuality(settings.qualityId)
-  const prefer = prefersFlats(settings.root) ? 'flat' : 'sharp'
+  // The global sharps/flats preference overrides the root's context-derived
+  // accidental; `'auto'` keeps today's choice (flats for flat-side roots).
+  const prefer = applySpellingPreference(
+    globalSettings.spellingPreference,
+    prefersFlats(settings.root) ? 'flat' : 'sharp',
+  )
 
   const updateSettings = useCallback((next: ChordExplorerSettings) => {
     const normalized = normalizeChordExplorerSettings(next)

@@ -256,6 +256,24 @@ describe('interval questions', () => {
     expect(q.answer).toBe('m6 (Minor Sixth)')
   })
 
+  it('honors a forced sharp preference for the note-to-note target (C to G#)', () => {
+    // Same identity draws as "C to Ab", but with an override the prefer coin
+    // flip is skipped, so no 5th value is consumed.
+    const rng = seq(0, 0.9, 0, 7 / 11 + 0.01)
+    const q = generateQuestion(['interval'], null, rng, undefined, 'sharp')
+    expect(q.kind).toBe('noteToNote')
+    expect(q.prompt).toBe('What interval is C to G#?')
+    expect(q.answer).toBe('m6 (Minor Sixth)')
+  })
+
+  it('honors a forced flat preference for the note-to-note target (C to Ab)', () => {
+    const rng = seq(0, 0.9, 0, 7 / 11 + 0.01)
+    const q = generateQuestion(['interval'], null, rng, undefined, 'flat')
+    expect(q.kind).toBe('noteToNote')
+    expect(q.prompt).toBe('What interval is C to Ab?')
+    expect(q.answer).toBe('m6 (Minor Sixth)')
+  })
+
   it('never offers a duplicate distractor', () => {
     const rng = mulberry32(12)
     for (let i = 0; i < 300; i++) {

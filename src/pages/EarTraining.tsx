@@ -114,6 +114,8 @@ import { getScale } from '../lib/theory/scales.ts'
 import { Fretboard, type FretboardMarker } from '../components/Fretboard.tsx'
 import { Keyboard, type KeyboardMarker } from '../components/Keyboard.tsx'
 import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
+import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
+import { applySpellingPreference } from '../lib/globalSettings.ts'
 import { fretMidi } from '../lib/theory/instruments.ts'
 import { midiToName, midiToPc, pcToName, type PitchClass } from '../lib/theory/notes.ts'
 import {
@@ -1437,8 +1439,6 @@ const ECHO_NOTE_DURATION = 0.55
 /** Fretboard fret range the phrase is echoed within. */
 const ECHO_FROM_FRET = 0
 const ECHO_TO_FRET = 12
-/** Spelling used for phrase note labels/feedback. */
-const ECHO_PREFER = 'sharp' as const
 
 const ECHO_INPUT_LABEL: Record<EchoInputMode, string> = {
   fretboard: 'Fretboard',
@@ -1469,8 +1469,14 @@ interface MelodicEchoTrainerProps {
 
 function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps = {}) {
   const { tuning } = useInstrumentSettings()
+  const { settings: globalSettings } = useGlobalSettings()
   const engineRef = useRef(getAudioEngine())
   const levelMode = fixedSettings !== undefined
+
+  // Phrase note labels/feedback aren't tied to a key signature (they're always
+  // drawn from the chosen key but spelled plainly), so honor the global
+  // sharps/flats preference; `'auto'` keeps the original sharp spelling.
+  const echoPrefer = applySpellingPreference(globalSettings.spellingPreference, 'sharp')
 
   const [settings, setSettings] = useState<MelodicEchoSettings>(() => {
     const stored = normalizeMelodicEchoSettings(melodicEchoSettingsStore.get())
@@ -1661,7 +1667,7 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
               string: s,
               fret: f,
               variant: 'dim',
-              label: pcToName(refPc, ECHO_PREFER),
+              label: pcToName(refPc, echoPrefer),
             })
           }
         }
@@ -1671,7 +1677,7 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
       byKey.set(`${m.string}:${m.fret}`, { ...m, variant: 'correct' })
     }
     return [...byKey.values()]
-  }, [question, referenceMidi, echoState.matched, progressMarks, tuning])
+  }, [question, referenceMidi, echoState.matched, progressMarks, tuning, echoPrefer])
 
   // Keyboard markers: the starting-reference key (dim) plus echoed keys.
   const keyMarkers = useMemo<KeyboardMarker[]>(() => {
@@ -1681,14 +1687,14 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
       byMidi.set(referenceMidi, {
         midi: referenceMidi,
         variant: 'dim',
-        label: midiToName(referenceMidi, ECHO_PREFER),
+        label: midiToName(referenceMidi, echoPrefer),
       })
     }
     for (const midi of progressMidis) {
-      byMidi.set(midi, { midi, variant: 'correct', label: midiToName(midi, ECHO_PREFER) })
+      byMidi.set(midi, { midi, variant: 'correct', label: midiToName(midi, echoPrefer) })
     }
     return [...byMidi.values()]
-  }, [question, referenceMidi, echoState.matched, progressMidis])
+  }, [question, referenceMidi, echoState.matched, progressMidis, echoPrefer])
 
   const keyboardRange = useMemo(() => {
     if (!question) return { from: 60, to: 72 }
@@ -1700,13 +1706,13 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
   const keyLabel = settings.inputMode === 'keyboard'
   const feedbackExpected = feedback
     ? keyLabel
-      ? midiToName(feedback.expected, ECHO_PREFER)
-      : pcToName(midiToPc(feedback.expected), ECHO_PREFER)
+      ? midiToName(feedback.expected, echoPrefer)
+      : pcToName(midiToPc(feedback.expected), echoPrefer)
     : ''
   const feedbackPlayed = feedback
     ? keyLabel
-      ? midiToName(feedback.played, ECHO_PREFER)
-      : pcToName(midiToPc(feedback.played), ECHO_PREFER)
+      ? midiToName(feedback.played, echoPrefer)
+      : pcToName(midiToPc(feedback.played), echoPrefer)
     : ''
 
   return (
@@ -1742,7 +1748,7 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
                 >
                   {ALL_ROOT_PCS.map((pc) => (
                     <option key={pc} value={pc}>
-                      {pcToName(pc, ECHO_PREFER)}
+                      {pcToName(pc, echoPrefer)}
                     </option>
                   ))}
                 </select>
@@ -1812,7 +1818,7 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
             fromFret={ECHO_FROM_FRET}
             toFret={ECHO_TO_FRET}
             markers={fretMarkers}
-            prefer={ECHO_PREFER}
+            prefer={echoPrefer}
             onFretClick={done ? undefined : (pos) => handleNote(pos.midi, { string: pos.string, fret: pos.fret })}
             ariaLabel={`${tuning.name} — echo the phrase`}
           />
@@ -1821,7 +1827,7 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
             from={keyboardRange.from}
             to={keyboardRange.to}
             markers={keyMarkers}
-            prefer={ECHO_PREFER}
+            prefer={echoPrefer}
             showLabels="c"
             onKeyClick={done ? undefined : ({ midi }) => handleNote(midi, null)}
             ariaLabel="Echo the phrase on the keyboard"
