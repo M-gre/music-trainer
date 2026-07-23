@@ -24,12 +24,16 @@ import {
   remainingSeconds,
   resolveQuestionClef,
   resolveRange,
+  srsKeyForNote,
   startCountdown,
   summarizeTimedResults,
   updateCustomRange,
   type CustomRange,
+  type GenerateContext,
   type NoteReadingQuestion,
 } from './noteReading.ts'
+import { STEP_MS, type SrsData, type SrsItem } from './spacedRepetition.ts'
+import type { Rng } from './quiz.ts'
 
 describe('randomNote', () => {
   it('stays within the given range', () => {
@@ -127,6 +131,91 @@ describe('generateNoteReadingQuestion', () => {
     const rng = (): number => values[i++ % values.length]!
     const second = generateNoteReadingQuestion(ctx, first, rng)
     expect(second).toEqual({ clef: 'treble', midi: CLEF_RANGE.treble.low })
+  })
+})
+
+describe('srsKeyForNote', () => {
+  it('distinguishes the same pitch across clefs', () => {
+    expect(srsKeyForNote('bass', 48)).toBe('bass:48')
+    expect(srsKeyForNote('treble', 48)).toBe('treble:48')
+    expect(srsKeyForNote('bass', 48)).not.toBe(srsKeyForNote('treble', 48))
+  })
+})
+
+describe('generateNoteReadingQuestion — SRS-blended picking', () => {
+  const NOW = 5_000_000
+
+  /** A seeded LCG for distribution tests — deterministic but well-spread. */
+  function lcg(seed: number): Rng {
+    let state = seed >>> 0
+    return () => {
+      state = (state * 1664525 + 1013904223) >>> 0
+      return state / 0x100000000
+    }
+  }
+
+  /** A reviewed SRS item due at `due`. */
+  function srsItem(due: number): SrsItem {
+    return { interval: 1, ease: 2.5, due, lapses: 0, reps: 1, lastSeen: due }
+  }
+
+  // A fixed bass clef with a two-note custom range, so the pick is purely a
+  // per-note weighting decision between `LOW` and `HIGH`.
+  const LOW = 48
+  const HIGH = 49
+  const ctx: GenerateContext = {
+    clefSetting: 'bass',
+    rangePreset: 'custom',
+    customRange: { bass: { low: LOW, high: HIGH }, treble: { low: 60, high: 61 } },
+  }
+
+  function midiCounts(srs: SrsData, n: number): Map<number, number> {
+    const rng = lcg(999)
+    const counts = new Map<number, number>()
+    for (let i = 0; i < n; i++) {
+      const q = generateNoteReadingQuestion(ctx, null, rng, { srs, now: NOW })
+      expect(q.clef).toBe('bass')
+      counts.set(q.midi, (counts.get(q.midi) ?? 0) + 1)
+    }
+    return counts
+  }
+
+  it('biases toward the overdue note over a not-yet-due one', () => {
+    const srs: SrsData = {
+      [srsKeyForNote('bass', LOW)]: srsItem(NOW - 5 * STEP_MS), // very overdue
+      [srsKeyForNote('bass', HIGH)]: srsItem(NOW + 100 * STEP_MS), // not due for ages
+    }
+    const counts = midiCounts(srs, 4000)
+    expect(counts.get(LOW) ?? 0).toBeGreaterThan((counts.get(HIGH) ?? 0) * 3)
+  })
+
+  it('prioritises a never-seen note over a recently-reviewed, not-due one', () => {
+    // HIGH reviewed and not due; LOW is new (no entry).
+    const srs: SrsData = { [srsKeyForNote('bass', HIGH)]: srsItem(NOW + 100 * STEP_MS) }
+    const counts = midiCounts(srs, 4000)
+    expect(counts.get(LOW) ?? 0).toBeGreaterThan((counts.get(HIGH) ?? 0) * 3)
+  })
+
+  it('still draws both notes with empty srs (uniform-ish)', () => {
+    const counts = midiCounts({}, 2000)
+    expect(counts.get(LOW) ?? 0).toBeGreaterThan(0)
+    expect(counts.get(HIGH) ?? 0).toBeGreaterThan(0)
+  })
+
+  it('keys the schedule by clef, so a treble draw ignores bass entries', () => {
+    // Both bass entries overdue, but a treble question keys off treble:* which
+    // are all new — so the pick can never collapse onto a bass key.
+    const trebleCtx: GenerateContext = { ...ctx, clefSetting: 'treble' }
+    const srs: SrsData = {
+      [srsKeyForNote('bass', LOW)]: srsItem(NOW - 100 * STEP_MS),
+      [srsKeyForNote('bass', HIGH)]: srsItem(NOW - 100 * STEP_MS),
+    }
+    const rng = lcg(7)
+    for (let i = 0; i < 100; i++) {
+      const q = generateNoteReadingQuestion(trebleCtx, null, rng, { srs, now: NOW })
+      expect(q.clef).toBe('treble')
+      expect([60, 61]).toContain(q.midi)
+    }
   })
 })
 

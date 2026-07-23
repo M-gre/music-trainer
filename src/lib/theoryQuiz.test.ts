@@ -7,10 +7,12 @@ import {
   generateQuestion,
   normalizeTheoryQuizSettings,
   QUIZ_CATEGORIES,
+  srsKeyForInterval,
   type QuizCategory,
   type TheoryQuizQuestion,
 } from './theoryQuiz.ts'
 import { memoryBackend } from './storage.ts'
+import { STEP_MS, type SrsData, type SrsItem } from './spacedRepetition.ts'
 import type { Rng } from './quiz.ts'
 
 const ALL_CATEGORIES: QuizCategory[] = QUIZ_CATEGORIES.map((c) => c.id)
@@ -259,6 +261,103 @@ describe('interval questions', () => {
     for (let i = 0; i < 300; i++) {
       const q = generateQuestion(['interval'], null, rng)
       expect(new Set(q.options).size).toBe(4)
+    }
+  })
+})
+
+describe('srsKey stamping', () => {
+  it('stamps every generated question with a stable, category-appropriate key', () => {
+    const cases: { category: QuizCategory; prefix: string }[] = [
+      { category: 'keySignature', prefix: 'keysig:' },
+      { category: 'diatonicChord', prefix: 'diatonic:' },
+      { category: 'interval', prefix: 'interval:' },
+    ]
+    for (const { category, prefix } of cases) {
+      const rng = mulberry32(prefix.length + 3)
+      for (let i = 0; i < 60; i++) {
+        const q = generateQuestion([category], null, rng)
+        expect(q.srsKey.startsWith(prefix)).toBe(true)
+        expect(q.srsKey.length).toBeGreaterThan(prefix.length)
+      }
+    }
+  })
+
+  it('gives both directions of the same interval fact the same key', () => {
+    // Over many draws every P5 question (either direction) keys to interval:7.
+    const rng = mulberry32(21)
+    let sawSemitones = false
+    let sawNoteToNote = false
+    for (let i = 0; i < 400; i++) {
+      const q = generateQuestion(['interval'], null, rng)
+      if (q.srsKey !== srsKeyForInterval(7)) continue
+      if (q.kind === 'semitones') sawSemitones = true
+      if (q.kind === 'noteToNote') sawNoteToNote = true
+    }
+    expect(sawSemitones).toBe(true)
+    expect(sawNoteToNote).toBe(true)
+  })
+})
+
+describe('generateQuestion — SRS-blended picking', () => {
+  const NOW = 5_000_000
+
+  function lcg(seed: number): Rng {
+    let state = seed >>> 0
+    return () => {
+      state = (state * 1664525 + 1013904223) >>> 0
+      return state / 0x100000000
+    }
+  }
+
+  function srsItem(due: number): SrsItem {
+    return { interval: 1, ease: 2.5, due, lapses: 0, reps: 1, lastSeen: due }
+  }
+
+  /** How often each interval fact key is drawn over `n` runs. */
+  function keyCounts(srs: SrsData, n: number): Map<string, number> {
+    const rng = lcg(2024)
+    const counts = new Map<string, number>()
+    for (let i = 0; i < n; i++) {
+      const q = generateQuestion(['interval'], null, rng, { srs, now: NOW })
+      counts.set(q.srsKey, (counts.get(q.srsKey) ?? 0) + 1)
+    }
+    return counts
+  }
+
+  it('is deterministic for a given rng', () => {
+    const srs: SrsData = { [srsKeyForInterval(7)]: srsItem(NOW - 3 * STEP_MS) }
+    const a = generateQuestion(['interval'], null, lcg(5), { srs, now: NOW })
+    const b = generateQuestion(['interval'], null, lcg(5), { srs, now: NOW })
+    expect(a).toEqual(b)
+  })
+
+  it('biases toward the one overdue fact when all others are not due', () => {
+    const srs: SrsData = {}
+    for (let s = 0; s <= 12; s++) srs[srsKeyForInterval(s)] = srsItem(NOW + 100 * STEP_MS)
+    srs[srsKeyForInterval(7)] = srsItem(NOW - 5 * STEP_MS) // very overdue
+    const counts = keyCounts(srs, 4000)
+    const p5 = counts.get(srsKeyForInterval(7)) ?? 0
+    const others = 4000 - p5
+    expect(p5).toBeGreaterThan(others)
+  })
+
+  it('prioritises a never-seen fact over reviewed, not-due ones', () => {
+    const srs: SrsData = {}
+    for (let s = 0; s <= 12; s++) srs[srsKeyForInterval(s)] = srsItem(NOW + 100 * STEP_MS)
+    delete srs[srsKeyForInterval(3)] // m3 is now "new"
+    const counts = keyCounts(srs, 4000)
+    const m3 = counts.get(srsKeyForInterval(3)) ?? 0
+    const others = 4000 - m3
+    expect(m3).toBeGreaterThan(others)
+  })
+
+  it('produces well-formed questions under SRS picking', () => {
+    const srs: SrsData = { [srsKeyForInterval(0)]: srsItem(NOW - 2 * STEP_MS) }
+    const rng = lcg(88)
+    for (let i = 0; i < 150; i++) {
+      const q = generateQuestion(ALL_CATEGORIES, null, rng, { srs, now: NOW })
+      assertWellFormed(q)
+      expect(ALL_CATEGORIES).toContain(q.category)
     }
   })
 })

@@ -44,11 +44,13 @@ import {
   INPUT_MODE_OPTIONS,
   isCountdownOver,
   noteReadingSettingsStore,
+  noteReadingSrsStore,
   normalizeNoteReadingSettings,
   RANGE_NOTE_OPTIONS,
   RANGE_PRESET_OPTIONS,
   remainingSeconds,
   resolveRange,
+  srsKeyForNote,
   startCountdown,
   summarizeTimedResults,
   TIMED_DURATIONS,
@@ -58,11 +60,14 @@ import {
   type InputMode,
   type NoteReadingAnswer,
   type NoteReadingMode,
+  type NoteReadingPicking,
   type NoteReadingQuestion,
   type NoteReadingSettings,
   type RangePreset,
   type TimedDurationSec,
 } from '../lib/noteReading.ts'
+import { normalizeSrsData, qualityFromOutcome, reviewKey, type SrsData } from '../lib/spacedRepetition.ts'
+import { recordPractice } from '../lib/practiceLog.ts'
 
 const FROM_FRET = 0
 const TO_FRET = 12
@@ -106,6 +111,20 @@ export function NoteReading() {
   const [question, setQuestion] = useState<NoteReadingQuestion | null>(null)
   const [result, setResult] = useState<AnswerResult<NoteReadingQuestion, NoteReadingAnswer> | null>(null)
   const [stats, setStats] = useState<QuizStats>(emptyStats)
+
+  // Spaced-repetition schedule (per clef+pitch). Reviews are recorded on every
+  // graded answer; the schedule biases which note is prompted next in Practice
+  // mode. Timed mode keeps a pure-random draw (it is a race, so due-ness
+  // shouldn't steer it), but still records reviews so the schedule stays fresh.
+  const [srs, setSrs] = useState<SrsData>(() => normalizeSrsData(noteReadingSrsStore.get()))
+  const srsRef = useRef(srs)
+  srsRef.current = srs
+  const modeRef = useRef(settings.mode)
+  modeRef.current = settings.mode
+  // Read via a ref so the (stable) generator always sees the latest schedule.
+  const pickingRef = useRef<() => NoteReadingPicking | undefined>(() => undefined)
+  pickingRef.current = () =>
+    modeRef.current === 'practice' ? { srs: srsRef.current, now: Date.now() } : undefined
 
   const [timedPhase, setTimedPhase] = useState<TimedPhase>('setup')
   const [remaining, setRemaining] = useState<number>(settings.timedSeconds)
@@ -158,7 +177,8 @@ export function NoteReading() {
     countdownRef.current = null
     if (!sessionRef.current) {
       sessionRef.current = new QuizSession<NoteReadingQuestion, NoteReadingAnswer>({
-        generate: (previous, rng) => generateNoteReadingQuestion(generateContextRef.current, previous, rng),
+        generate: (previous, rng) =>
+          generateNoteReadingQuestion(generateContextRef.current, previous, rng, pickingRef.current()),
         check: (q, a) => checkNoteReadingAnswer(q, a, answerContextRef.current),
         clock: () => performance.now(),
       })
@@ -226,6 +246,22 @@ export function NoteReading() {
       const res = session.answer(answer)
       setResult(res)
       setStats(session.stats)
+
+      // Record the review (both modes) and stamp the practice log — Note
+      // Reading tracks no per-note stats otherwise, so this is where its
+      // activity reaches the dashboard.
+      const now = Date.now()
+      recordPractice(new Date(now))
+      setSrs(
+        noteReadingSrsStore.update((d) =>
+          reviewKey(
+            d,
+            srsKeyForNote(res.question.clef, res.question.midi),
+            qualityFromOutcome(res.correct, res.responseMs),
+            now,
+          ),
+        ),
+      )
 
       const engine = engineRef.current
       void engine
