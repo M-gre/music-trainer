@@ -6,10 +6,14 @@ import {
   createGlobalSettingsStore,
   DEFAULT_GLOBAL_SETTINGS,
   DEFAULT_MASTER_VOLUME,
+  DEFAULT_VOICE_PREFERENCES,
   migrateGlobalSettings,
   normalizeGlobalSettings,
+  normalizeVoicePreferences,
   readPersistedMasterVolume,
+  readPersistedVoicePreferences,
 } from './globalSettings.ts'
+import { isVoiceName } from './audio/voices.ts'
 
 describe('clampVolume', () => {
   it('clamps into [0, 1]', () => {
@@ -59,8 +63,39 @@ describe('normalizeGlobalSettings', () => {
   })
 
   it('keeps valid fields verbatim', () => {
-    const settings = { leftHanded: true, spellingPreference: 'flats', masterVolume: 0.3 }
+    const settings = {
+      leftHanded: true,
+      spellingPreference: 'flats',
+      masterVolume: 0.3,
+      voices: { fretted: 'classic', keyboard: 'pluck' },
+    }
     expect(normalizeGlobalSettings(settings)).toEqual(settings)
+  })
+
+  it('fills default voices when missing and rejects invalid voice names', () => {
+    expect(normalizeGlobalSettings({}).voices).toEqual(DEFAULT_VOICE_PREFERENCES)
+    expect(normalizeGlobalSettings({ voices: { fretted: 'bogus', keyboard: 'piano' } }).voices).toEqual(
+      { fretted: DEFAULT_VOICE_PREFERENCES.fretted, keyboard: 'piano' },
+    )
+  })
+})
+
+describe('normalizeVoicePreferences', () => {
+  it('defaults per field and accepts valid voices', () => {
+    expect(normalizeVoicePreferences(null)).toEqual(DEFAULT_VOICE_PREFERENCES)
+    expect(normalizeVoicePreferences({ fretted: 'piano' })).toEqual({
+      ...DEFAULT_VOICE_PREFERENCES,
+      fretted: 'piano',
+    })
+    expect(normalizeVoicePreferences({ fretted: 3, keyboard: 'classic' })).toEqual({
+      fretted: DEFAULT_VOICE_PREFERENCES.fretted,
+      keyboard: 'classic',
+    })
+  })
+
+  it('defaults are valid voice names', () => {
+    expect(isVoiceName(DEFAULT_VOICE_PREFERENCES.fretted)).toBe(true)
+    expect(isVoiceName(DEFAULT_VOICE_PREFERENCES.keyboard)).toBe(true)
   })
 })
 
@@ -72,24 +107,30 @@ describe('global settings store', () => {
 
   it('round-trips across store instances sharing a backend', () => {
     const backend = memoryBackend()
-    createGlobalSettingsStore(backend).set({
+    const value = {
       leftHanded: true,
-      spellingPreference: 'sharps',
+      spellingPreference: 'sharps' as const,
       masterVolume: 0.5,
-    })
-    expect(createGlobalSettingsStore(backend).get()).toEqual({
-      leftHanded: true,
-      spellingPreference: 'sharps',
-      masterVolume: 0.5,
-    })
+      voices: { fretted: 'piano' as const, keyboard: 'classic' as const },
+    }
+    createGlobalSettingsStore(backend).set(value)
+    expect(createGlobalSettingsStore(backend).get()).toEqual(value)
   })
 
-  it('migrates older-version data through normalization', () => {
+  it('migrates older v1 data (no voices) by filling default voices', () => {
     const backend = memoryBackend()
-    // Simulate a hypothetical v0 envelope missing later fields.
-    backend.setItem('mt:settings:global', JSON.stringify({ v: 0, data: { leftHanded: true } }))
+    // A v1 envelope predates the `voices` field.
+    backend.setItem(
+      'mt:settings:global',
+      JSON.stringify({ v: 1, data: { leftHanded: true, spellingPreference: 'flats', masterVolume: 0.4 } }),
+    )
     const store = createGlobalSettingsStore(backend)
-    expect(store.get()).toEqual({ ...DEFAULT_GLOBAL_SETTINGS, leftHanded: true })
+    expect(store.get()).toEqual({
+      leftHanded: true,
+      spellingPreference: 'flats',
+      masterVolume: 0.4,
+      voices: DEFAULT_VOICE_PREFERENCES,
+    })
   })
 
   it('never throws when the backend fails', () => {
@@ -123,5 +164,13 @@ describe('readPersistedMasterVolume', () => {
     const volume = readPersistedMasterVolume()
     expect(volume).toBeGreaterThanOrEqual(0)
     expect(volume).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('readPersistedVoicePreferences', () => {
+  it('returns valid voice names from the app store', () => {
+    const prefs = readPersistedVoicePreferences()
+    expect(isVoiceName(prefs.fretted)).toBe(true)
+    expect(isVoiceName(prefs.keyboard)).toBe(true)
   })
 })

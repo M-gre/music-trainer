@@ -20,10 +20,12 @@ import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
 import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
 import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
 import { getAudioEngine } from '../lib/audio/index.ts'
+import { VOICE_INFO, VOICE_NAMES, type VoiceName } from '../lib/audio/voices.ts'
 import {
   applySpellingPreference,
   SPELLING_PREFERENCES,
   type SpellingPreference,
+  type VoicePreferences,
 } from '../lib/globalSettings.ts'
 import { fretMidi } from '../lib/theory/instruments.ts'
 import { midiToPc, pcToName, type PitchClass } from '../lib/theory/notes.ts'
@@ -41,6 +43,32 @@ const PREVIEW_TO = 5
 const ACCIDENTAL_PCS: readonly PitchClass[] = [1, 3, 6, 8, 10]
 /** A pleasant A-major triad (A3, C#4, E4) for the master-volume test tone. */
 const TEST_TONE_CHORD = [57, 61, 64]
+
+/**
+ * The two voice-preference contexts, with a short low + mid test phrase for
+ * each. Fretted uses a bass/guitar register (E2 → E3); keyboard a piano
+ * register (C3 → E4). The engine routes fretboard tools through `fretted` and
+ * keyboard tools through `keyboard`.
+ */
+const VOICE_CONTEXTS: readonly {
+  key: keyof VoicePreferences
+  label: string
+  hint: string
+  phrase: readonly number[]
+}[] = [
+  {
+    key: 'fretted',
+    label: 'Bass & guitar (fretboard tools)',
+    hint: 'The voice for every fretboard tool — fretboard trainer, scales, chords, dexterity.',
+    phrase: [40, 52],
+  },
+  {
+    key: 'keyboard',
+    label: 'Piano (keyboard tools)',
+    hint: 'The voice for keyboard tools.',
+    phrase: [48, 64],
+  },
+]
 
 export function SettingsPage() {
   const { settings, update } = useGlobalSettings()
@@ -74,6 +102,23 @@ export function SettingsPage() {
     engine.setMasterVolume(settings.masterVolume)
     await engine.ensureRunning()
     engine.playChord(TEST_TONE_CHORD, 0.9)
+  }
+
+  function changeVoice(context: keyof VoicePreferences, voice: VoiceName): void {
+    const voices: VoicePreferences = { ...settings.voices, [context]: voice }
+    update({ voices })
+    engineRef.current.setVoicePreferences(voices)
+  }
+
+  /** Play the short low → mid test phrase for a context through the given voice. */
+  async function playVoicePhrase(voice: VoiceName, phrase: readonly number[]): Promise<void> {
+    const engine = engineRef.current
+    engine.setMasterVolume(settings.masterVolume)
+    await engine.ensureRunning()
+    const now = engine.currentTime
+    phrase.forEach((midi, i) => {
+      engine.playNote(midi, 0.6, { when: now + i * 0.34, voice })
+    })
   }
 
   return (
@@ -158,6 +203,53 @@ export function SettingsPage() {
           <button type="button" className="set-test-tone" onClick={() => void playTestTone()}>
             Play test tone
           </button>
+        </section>
+
+        <section className="tool-control-group set-section">
+          <span className="tool-control-label">Instrument sound</span>
+          <p className="set-hint">
+            Choose the synthesized voice each family of tools plays. Bass and guitar tools default
+            to a plucked-string sound; keyboard tools to a piano tone.
+          </p>
+
+          {VOICE_CONTEXTS.map((ctx) => {
+            const current = settings.voices[ctx.key]
+            return (
+              <div key={ctx.key} className="set-field set-voice-field">
+                <span className="set-field-label">{ctx.label}</span>
+                <div
+                  className="set-radio-group"
+                  role="radiogroup"
+                  aria-label={`${ctx.label} voice`}
+                >
+                  {VOICE_NAMES.map((voice) => (
+                    <button
+                      key={voice}
+                      type="button"
+                      role="radio"
+                      aria-checked={current === voice}
+                      className={`set-radio${current === voice ? ' set-radio-active' : ''}`}
+                      title={VOICE_INFO[voice].description}
+                      onClick={() => changeVoice(ctx.key, voice)}
+                    >
+                      {VOICE_INFO[voice].label}
+                    </button>
+                  ))}
+                </div>
+                <div className="set-voice-footer">
+                  <span className="set-hint">{VOICE_INFO[current].description}</span>
+                  <button
+                    type="button"
+                    className="set-test-tone set-voice-test"
+                    onClick={() => void playVoicePhrase(current, ctx.phrase)}
+                  >
+                    Test
+                  </button>
+                </div>
+                <p className="set-hint">{ctx.hint}</p>
+              </div>
+            )
+          })}
         </section>
       </div>
     </div>

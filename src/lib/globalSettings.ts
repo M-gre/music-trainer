@@ -16,6 +16,7 @@
  * apply globally without editing any tool page.
  */
 
+import { isVoiceName, type VoiceName } from './audio/voices.ts'
 import { Store, type StorageBackend } from './storage.ts'
 
 /**
@@ -37,6 +38,24 @@ export const SPELLING_PREFERENCES: readonly SpellingPreference[] = ['auto', 'sha
  */
 export const DEFAULT_MASTER_VOLUME = 0.8
 
+/**
+ * Which synthesized voice each family of tools plays. `fretted` covers the
+ * bass/guitar fretboard tools (default the Karplus-Strong pluck); `keyboard`
+ * covers the piano tools (default the additive piano tone). The `AudioEngine`
+ * reads these and picks a note's voice from its active context.
+ */
+export interface VoicePreferences {
+  /** Voice for fretboard (bass/guitar) tools. */
+  fretted: VoiceName
+  /** Voice for keyboard (piano) tools. */
+  keyboard: VoiceName
+}
+
+export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
+  fretted: 'pluck',
+  keyboard: 'piano',
+}
+
 export interface GlobalSettings {
   /** Mirror the fretboard horizontally (nut on the right) for left-handers. */
   leftHanded: boolean
@@ -44,12 +63,15 @@ export interface GlobalSettings {
   spellingPreference: SpellingPreference
   /** Master output volume, 0..1. */
   masterVolume: number
+  /** Which synthesized voice each tool family plays. */
+  voices: VoicePreferences
 }
 
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   leftHanded: false,
   spellingPreference: 'auto',
   masterVolume: DEFAULT_MASTER_VOLUME,
+  voices: DEFAULT_VOICE_PREFERENCES,
 }
 
 /** Clamp a volume into `[0, 1]`; NaN falls back to the default volume. */
@@ -60,6 +82,17 @@ export function clampVolume(volume: number): number {
 
 function isSpellingPreference(value: unknown): value is SpellingPreference {
   return value === 'auto' || value === 'sharps' || value === 'flats'
+}
+
+/** Coerce arbitrary data into valid `VoicePreferences`, per-field defaulting. */
+export function normalizeVoicePreferences(value: unknown): VoicePreferences {
+  const v = (typeof value === 'object' && value !== null ? value : {}) as Partial<
+    Record<keyof VoicePreferences, unknown>
+  >
+  return {
+    fretted: isVoiceName(v.fretted) ? v.fretted : DEFAULT_VOICE_PREFERENCES.fretted,
+    keyboard: isVoiceName(v.keyboard) ? v.keyboard : DEFAULT_VOICE_PREFERENCES.keyboard,
+  }
 }
 
 /**
@@ -81,13 +114,15 @@ export function normalizeGlobalSettings(value: unknown): GlobalSettings {
       typeof v.masterVolume === 'number'
         ? clampVolume(v.masterVolume)
         : DEFAULT_GLOBAL_SETTINGS.masterVolume,
+    voices: normalizeVoicePreferences(v.voices),
   }
 }
 
 /**
- * Migrate persisted data from an older schema version. There is only v1 so far;
- * `normalizeGlobalSettings` defensively fills any fields a future older shape
- * might lack, so a bump needs no bespoke migration logic here.
+ * Migrate persisted data from an older schema version. v1 → v2 added the
+ * `voices` preferences; `normalizeGlobalSettings` defensively fills any missing
+ * field (v1 data simply gets the default voices), so no bespoke per-version
+ * logic is needed here.
  */
 export function migrateGlobalSettings(oldData: unknown): GlobalSettings {
   return normalizeGlobalSettings(oldData)
@@ -117,7 +152,7 @@ export function createGlobalSettingsStore(backend?: StorageBackend): Store<Globa
   return new Store<GlobalSettings>(
     {
       key: 'settings:global',
-      version: 1,
+      version: 2,
       defaultValue: DEFAULT_GLOBAL_SETTINGS,
       migrate: migrateGlobalSettings,
     },
@@ -134,4 +169,12 @@ export const globalSettingsStore = createGlobalSettingsStore()
  */
 export function readPersistedMasterVolume(): number {
   return normalizeGlobalSettings(globalSettingsStore.get()).masterVolume
+}
+
+/**
+ * The persisted voice preferences (falling back to the defaults). Called by the
+ * `AudioEngine` constructor so playback starts with the user's chosen voices.
+ */
+export function readPersistedVoicePreferences(): VoicePreferences {
+  return normalizeGlobalSettings(globalSettingsStore.get()).voices
 }

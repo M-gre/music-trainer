@@ -4733,3 +4733,31 @@ summary:focus-visible,
   gap: 0.5rem;
 }
 
+/* --- Settings: instrument sound (per-context voice pickers) -------------- */
+
+.set-voice-field + .set-voice-field {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.set-voice-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.set-voice-footer .set-hint {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.set-voice-test {
+  flex: 0 0 auto;
+  align-self: auto;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.82rem;
+}
+
