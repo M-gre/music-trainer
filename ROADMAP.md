@@ -14,7 +14,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [x] Shared instrument picker UI: instrument (bass/guitar) → string count → tuning, persisted as global default via storage lib, used by every fretboard tool
 - [x] `Keyboard` SVG component: configurable octave range, key highlighting with labels, click handler, responsive
 - [x] Audio engine core (`src/lib/audio/`): AudioContext wrapper, simple synth voice (poly, ADSR), `playNote(midi, dur)`, master volume; scheduling logic kept pure/testable
-- [ ] Lookahead scheduler for sequencing (tempo, beats, swing-ready), unit-tested with a mock clock
+- [x] Lookahead scheduler for sequencing (tempo, beats, swing-ready), unit-tested with a mock clock
 - [ ] Metronome tool page: tempo, time signature, accent on 1, subdivisions, tap tempo
 
 ## M1 — Note learning
