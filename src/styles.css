@@ -4171,3 +4171,21 @@ a.tool-card:hover {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, var(--bg));
 }
+
+/* Legato slur tag on a dexterity step (hammer-on / pull-off). */
+.dx-strip-slur {
+  display: inline-block;
+  margin-left: 0.28rem;
+  font-size: 0.56rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.12rem 0.24rem;
+  border-radius: 4px;
+  color: var(--bg);
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.dx-strip-slur-pull {
+  background: var(--text-dim);
+}

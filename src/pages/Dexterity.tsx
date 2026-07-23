@@ -37,15 +37,18 @@ import {
   type DexterityMode,
 } from '../lib/dexteritySettings.ts'
 import {
+  ANCHOR_SAME_STRING,
   applyDirection,
   BUILTIN_PATTERNS,
   CHROMATIC_POSITION_SHIFT,
   DIRECTIONS,
   expandPattern,
   getPattern,
+  LEGATO_HAMMER_ASC,
   locateStep,
   positionForLoop,
   ROLL_ONE_FINGER,
+  STRETCH_124,
   STRING_CROSSING_12,
   TRILL_12,
   type Direction,
@@ -121,6 +124,9 @@ const DRILLS: readonly DrillMeta[] = [
   { id: 'shift', name: 'Position shift', tagline: 'Move the hand up the neck mid-phrase' },
   { id: 'roll', name: 'Finger rolls', tagline: 'Same fret rolled across adjacent strings' },
   { id: 'trill', name: 'Trills & bursts', tagline: 'Rapid two-finger alternation per string' },
+  { id: 'stretch', name: 'Wide stretch', tagline: 'Finger-independence spans — 1-2-4, 1-3-4, 5-fret' },
+  { id: 'anchor', name: 'Anchor hold', tagline: 'Hold one finger while the others move' },
+  { id: 'legato', name: 'Legato slurs', tagline: 'Hammer-on / pull-off runs, shown with H / P' },
   { id: 'scale', name: 'Scale sequence', tagline: 'Run a scale through a sequence pattern' },
   { id: 'arpeggio', name: 'Arpeggio', tagline: 'Chord tones across strings & inversions' },
 ]
@@ -132,10 +138,22 @@ const CATEGORY_DEFAULT_PATTERN: Record<PatternCategory, string> = {
   shift: CHROMATIC_POSITION_SHIFT.id,
   roll: ROLL_ONE_FINGER.id,
   trill: TRILL_12.id,
+  stretch: STRETCH_124.id,
+  anchor: ANCHOR_SAME_STRING.id,
+  legato: LEGATO_HAMMER_ASC.id,
 }
 
 /** The pattern-backed drills, in `DRILLS` order — used to build the "Variant" pickers. */
-const PATTERN_DRILLS: readonly PatternCategory[] = ['spider', 'crossing', 'shift', 'roll', 'trill']
+const PATTERN_DRILLS: readonly PatternCategory[] = [
+  'spider',
+  'crossing',
+  'shift',
+  'roll',
+  'trill',
+  'stretch',
+  'anchor',
+  'legato',
+]
 
 function isPatternDrill(d: DrillType): d is PatternCategory {
   return (PATTERN_DRILLS as readonly string[]).includes(d)
@@ -723,7 +741,17 @@ export function Dexterity() {
                   role="listitem"
                   className={`dx-strip-step${active ? ' dx-strip-active' : ''}${accented ? ' dx-strip-accent' : ''}`}
                 >
-                  <span className="dx-strip-order">{i + 1}</span>
+                  <span className="dx-strip-order">
+                    {i + 1}
+                    {step.articulation && (
+                      <span
+                        className={`dx-strip-slur dx-strip-slur-${step.articulation}`}
+                        title={step.articulation === 'hammer' ? 'Hammer-on (slur)' : 'Pull-off (slur)'}
+                      >
+                        {step.articulation === 'hammer' ? 'H' : 'P'}
+                      </span>
+                    )}
+                  </span>
                   <span className="dx-strip-finger">{step.finger}</span>
                   <span className="dx-strip-meta">
                     {midiToName(step.midi)} · str {step.string + 1} · fr {step.fret}

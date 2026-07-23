@@ -46,10 +46,29 @@ export type Traversal = 'ascending' | 'descending' | 'ascending-descending'
 
 /**
  * Picker grouping for a pattern: spider-walk permutation, string-crossing
- * drill, position shift, finger roll (same fret across adjacent strings), or
- * trill/burst (rapid two-finger alternation per string).
+ * drill, position shift, finger roll (same fret across adjacent strings),
+ * trill/burst (rapid two-finger alternation per string), wide stretch
+ * (finger-independence spans), anchor hold (one finger planted while the
+ * others move), or legato (hammer-on / pull-off slur runs).
  */
-export type PatternCategory = 'spider' | 'crossing' | 'shift' | 'roll' | 'trill'
+export type PatternCategory =
+  | 'spider'
+  | 'crossing'
+  | 'shift'
+  | 'roll'
+  | 'trill'
+  | 'stretch'
+  | 'anchor'
+  | 'legato'
+
+/**
+ * A slur articulation on a note: `hammer` = hammered on from the previous
+ * (lower) note, `pull` = pulled off to from the previous (higher) note. Both
+ * are sounded without re-picking, so they read as a slur. Absent = the note is
+ * picked/plucked normally. Purely descriptive metadata carried through to the
+ * expanded step so the UI can tag it; it does not change pitch or timing.
+ */
+export type Articulation = 'hammer' | 'pull'
 
 /**
  * One note of a repeating motif, relative to the current traversal string and
@@ -65,6 +84,8 @@ export interface PatternCell {
   stringOffset?: number
   /** Length in metronome grid steps. Default 1. */
   duration?: number
+  /** Slur articulation (hammer-on / pull-off). Absent = picked normally. */
+  articulation?: Articulation
 }
 
 /** A reusable exercise pattern template. */
@@ -104,6 +125,8 @@ export interface ExerciseStep {
   duration: number
   /** Midi pitch of the note. */
   midi: Midi
+  /** Slur articulation (hammer-on / pull-off), only present when the cell set one. */
+  articulation?: Articulation
 }
 
 export interface ExpandOptions {
@@ -179,13 +202,18 @@ export function expandPattern(pattern: ExercisePattern, opts: ExpandOptions): Ex
       const string = pass.string + (cell.stringOffset ?? 0)
       const fret = position + cell.fret
       if (string < 0 || string >= stringCount || fret < 0) continue
-      steps.push({
+      const step: ExerciseStep = {
         string,
         fret,
         finger: cell.finger,
         duration: Math.max(1, Math.floor(cell.duration ?? 1)),
         midi: fretMidi(tuning, string, fret),
-      })
+      }
+      // Only attach articulation when the cell has one, so plain patterns'
+      // steps stay free of an `articulation: undefined` key (keeps existing
+      // deep-equality tests and step comparisons unchanged).
+      if (cell.articulation) step.articulation = cell.articulation
+      steps.push(step)
     }
   }
 
@@ -607,6 +635,158 @@ export const TRILL_14: ExercisePattern = trillPattern(
   3,
 )
 
+/**
+ * Wide-stretch / finger-independence drills. Motifs whose fret offsets open
+ * gaps between the fretting fingers (a whole tone or more), walked up and down
+ * every string like a spider walk. The lower on the neck the exercise is
+ * anchored (the user's starting-fret setting), the wider the physical stretch —
+ * so difficulty is dialled in with the existing position control, not baked in.
+ */
+
+/** 1-2-4 span: fingers on frets 0-2-4, skipping the third finger's fret. */
+export const STRETCH_124: ExercisePattern = {
+  id: 'stretch-124',
+  name: 'Wide Stretch 1-2-4',
+  description:
+    'Fingers 1-2-4 spanning frets 0-2-4 (a whole tone, then a whole tone) up then down every string, leaving a gap where the third finger would sit. Opens the hand for four-fret reaches — the lower the starting fret, the harder the stretch.',
+  motif: [
+    { fret: 0, finger: 1 },
+    { fret: 2, finger: 2 },
+    { fret: 4, finger: 4 },
+  ],
+  traversal: 'ascending-descending',
+  category: 'stretch',
+}
+
+/** 1-3-4 span: fingers on frets 0-3-4, the reach sitting below the third finger. */
+export const STRETCH_134: ExercisePattern = {
+  id: 'stretch-134',
+  name: 'Wide Stretch 1-3-4',
+  description:
+    'Fingers 1-3-4 spanning frets 0-3-4 — a minor third then a half step, so the reach opens between the first and third fingers. Walked up and down every string; anchor it low on the neck to widen the stretch.',
+  motif: [
+    { fret: 0, finger: 1 },
+    { fret: 3, finger: 3 },
+    { fret: 4, finger: 4 },
+  ],
+  traversal: 'ascending-descending',
+  category: 'stretch',
+}
+
+/** 1-4 five-fret span: index and pinky five frets apart, the maximal one-position reach. */
+export const STRETCH_14_SPAN: ExercisePattern = {
+  id: 'stretch-14-span',
+  name: 'Five-Fret 1-4 Span',
+  description:
+    'Index and pinky only, five frets apart (0 to 4), rolled up then down every string. A maximal one-position stretch for reach and pinky strength — ease it by starting higher up the neck where the frets sit closer together.',
+  motif: [
+    { fret: 0, finger: 1 },
+    { fret: 4, finger: 4 },
+  ],
+  traversal: 'ascending-descending',
+  category: 'stretch',
+}
+
+/**
+ * Anchor-hold drills. Finger 1 is planted and *kept down* while fingers 2-3-4
+ * sound in turn, returning to the anchor between each. The cell model has no
+ * "held" flag, so the anchor is expressed as the recurring finger-1 note (the
+ * pattern's first, lowest note) and spelled out in the description — the held
+ * note is re-sounded, not re-fretted. Trains finger independence with a stable
+ * hand frame.
+ */
+
+/** Anchor finger 1 on a string while 2-3-4 play the same string above it. */
+export const ANCHOR_SAME_STRING: ExercisePattern = {
+  id: 'anchor-same-string',
+  name: 'Anchor Hold — Same String',
+  description:
+    'Plant finger 1 and keep it pressed while fingers 2, 3, 4 sound in turn on the same string, returning to the anchor between each. Trains finger independence and a steady hand frame — the recurring first note is the anchor being held down the whole time.',
+  motif: [
+    { fret: 0, finger: 1 },
+    { fret: 1, finger: 2 },
+    { fret: 0, finger: 1 },
+    { fret: 2, finger: 3 },
+    { fret: 0, finger: 1 },
+    { fret: 3, finger: 4 },
+  ],
+  traversal: 'ascending',
+  category: 'anchor',
+}
+
+/** Anchor finger 1 on one string while 2-3-4 play across on the adjacent string. */
+export const ANCHOR_ADJACENT_STRING: ExercisePattern = {
+  id: 'anchor-adjacent-string',
+  name: 'Anchor Hold — Adjacent String',
+  description:
+    'Hold finger 1 on one string while fingers 2, 3, 4 play across on the next string up, coming back to the anchor between each. Builds independence between the planted index and the moving fingers, plus clean cross-string control.',
+  motif: [
+    { fret: 0, finger: 1 },
+    { fret: 1, finger: 2, stringOffset: 1 },
+    { fret: 0, finger: 1 },
+    { fret: 2, finger: 3, stringOffset: 1 },
+    { fret: 0, finger: 1 },
+    { fret: 3, finger: 4, stringOffset: 1 },
+  ],
+  traversal: 'ascending',
+  category: 'anchor',
+}
+
+/**
+ * Legato drills. Hammer-on and pull-off runs, sounded without re-picking each
+ * note. The articulation is carried on the cells (see `Articulation`) so the UI
+ * can tag each slurred step (H / P); the engine treats these like any other
+ * pattern for pitch and timing — only the display differs.
+ */
+
+/** Pick once per string, hammer on 2-3-4 — an ascending legato run. */
+export const LEGATO_HAMMER_ASC: ExercisePattern = {
+  id: 'legato-hammer-asc',
+  name: 'Hammer-On Run 1-2-3-4',
+  description:
+    'Pick only the first note of each string, then hammer on fingers 2, 3, 4 — a fully legato ascending run climbing string by string. Builds fretting-hand strength and even, unpicked attacks. Hammered notes are tagged H.',
+  motif: [
+    { fret: 0, finger: 1 },
+    { fret: 1, finger: 2, articulation: 'hammer' },
+    { fret: 2, finger: 3, articulation: 'hammer' },
+    { fret: 3, finger: 4, articulation: 'hammer' },
+  ],
+  traversal: 'ascending',
+  category: 'legato',
+}
+
+/** Pick the pinky note, pull off through 3-2-1 — a descending legato run. */
+export const LEGATO_PULL_DESC: ExercisePattern = {
+  id: 'legato-pull-desc',
+  name: 'Pull-Off Run 4-3-2-1',
+  description:
+    'Fret all four fingers, pick the pinky note, then pull off through 3-2-1 — a descending legato run on each string. Trains controlled pull-offs and clean left-hand finger release. Pulled notes are tagged P.',
+  motif: [
+    { fret: 3, finger: 4 },
+    { fret: 2, finger: 3, articulation: 'pull' },
+    { fret: 1, finger: 2, articulation: 'pull' },
+    { fret: 0, finger: 1, articulation: 'pull' },
+  ],
+  traversal: 'ascending',
+  category: 'legato',
+}
+
+/** Pick once, then alternate hammer-on / pull-off — a continuous legato trill. */
+export const LEGATO_TRILL_COMBO: ExercisePattern = {
+  id: 'legato-trill-combo',
+  name: 'Hammer/Pull Trill Combo',
+  description:
+    'Pick once, then alternate hammer-on and pull-off between fingers 1 and 3 — a continuous legato trill on each string. Combines both slur techniques for endurance and even, smooth articulation. Steps are tagged H and P.',
+  motif: [
+    { fret: 0, finger: 1 },
+    { fret: 2, finger: 3, articulation: 'hammer' },
+    { fret: 0, finger: 1, articulation: 'pull' },
+    { fret: 2, finger: 3, articulation: 'hammer' },
+  ],
+  traversal: 'ascending',
+  category: 'legato',
+}
+
 /** All shipped patterns, in picker order (grouped by category). */
 export const BUILTIN_PATTERNS: readonly ExercisePattern[] = [
   SPIDER_1234_UPDOWN,
@@ -625,6 +805,14 @@ export const BUILTIN_PATTERNS: readonly ExercisePattern[] = [
   TRILL_12,
   TRILL_13,
   TRILL_14,
+  STRETCH_124,
+  STRETCH_134,
+  STRETCH_14_SPAN,
+  ANCHOR_SAME_STRING,
+  ANCHOR_ADJACENT_STRING,
+  LEGATO_HAMMER_ASC,
+  LEGATO_PULL_DESC,
+  LEGATO_TRILL_COMBO,
 ]
 
 /** Picker group labels, in display order. */
@@ -634,6 +822,9 @@ export const PATTERN_CATEGORY_LABELS: Record<PatternCategory, string> = {
   shift: 'Position shifts',
   roll: 'Finger rolls',
   trill: 'Trills & bursts',
+  stretch: 'Wide stretches',
+  anchor: 'Anchor holds',
+  legato: 'Legato slurs',
 }
 
 /** Builtin patterns grouped by category, in `PATTERN_CATEGORY_LABELS` order. */

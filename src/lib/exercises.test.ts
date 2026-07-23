@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { getTuning } from './theory/instruments.ts'
 import { fretMidi } from './theory/instruments.ts'
 import {
+  ANCHOR_ADJACENT_STRING,
+  ANCHOR_SAME_STRING,
   applyDirection,
   BUILTIN_PATTERNS,
   CHROMATIC_POSITION_SHIFT,
   expandPattern,
   getPattern,
+  LEGATO_HAMMER_ASC,
+  LEGATO_PULL_DESC,
+  LEGATO_TRILL_COMBO,
   locateStep,
   patternsByCategory,
   POSITION_SHIFT_1234,
@@ -22,6 +27,9 @@ import {
   SPIDER_4231_UPDOWN,
   spiderMotif,
   stepTimings,
+  STRETCH_124,
+  STRETCH_134,
+  STRETCH_14_SPAN,
   STRING_CROSSING_12,
   THREE_NPS_SHIFT,
   TRILL_12,
@@ -428,12 +436,122 @@ describe('trill / burst drills', () => {
   })
 })
 
+describe('wide-stretch drills', () => {
+  it('1-2-4 spans frets 0-2-4 with fingers 1-2-4, up then down', () => {
+    const steps = expandPattern(STRETCH_124, { tuning: bass4, position: 5 })
+    expect(steps).toHaveLength(24) // 3-note motif x 4 strings, up and down
+    expect(steps.slice(0, 3)).toEqual([
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 7, finger: 2, duration: 1, midi: fretMidi(bass4, 0, 7) },
+      { string: 0, fret: 9, finger: 4, duration: 1, midi: fretMidi(bass4, 0, 9) },
+    ])
+    // Turnaround: top string's last ascending note repeats reversed.
+    expect(steps[11]).toMatchObject({ string: 3, fret: 9, finger: 4 })
+    expect(steps[12]).toMatchObject({ string: 3, fret: 9, finger: 4 })
+  })
+
+  it('1-3-4 spans frets 0-3-4 with fingers 1-3-4', () => {
+    const steps = expandPattern(STRETCH_134, { tuning: bass4, position: 5 })
+    expect(steps.slice(0, 3)).toEqual([
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 8, finger: 3, duration: 1, midi: fretMidi(bass4, 0, 8) },
+      { string: 0, fret: 9, finger: 4, duration: 1, midi: fretMidi(bass4, 0, 9) },
+    ])
+  })
+
+  it('five-fret span reaches from index to pinky five frets apart', () => {
+    const steps = expandPattern(STRETCH_14_SPAN, { tuning: bass4, position: 3 })
+    expect(steps.slice(0, 2)).toEqual([
+      { string: 0, fret: 3, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 3) },
+      { string: 0, fret: 7, finger: 4, duration: 1, midi: fretMidi(bass4, 0, 7) },
+    ])
+    // Index-to-pinky spans five frets (inclusive).
+    expect(steps[1]!.fret - steps[0]!.fret).toBe(4)
+  })
+
+  it('renders on guitar-6 (tuning-aware string count)', () => {
+    const steps = expandPattern(STRETCH_124, { tuning: guitar6, position: 5 })
+    expect(steps).toHaveLength(36) // 3 x 6 strings, up and down
+  })
+})
+
+describe('anchor-hold drills', () => {
+  it('same-string variant returns to the finger-1 anchor between 2, 3, 4', () => {
+    const steps = expandPattern(ANCHOR_SAME_STRING, { tuning: bass4, position: 5 })
+    // One pass per string (ascending), 6 notes each.
+    expect(steps.slice(0, 6)).toEqual([
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 6, finger: 2, duration: 1, midi: fretMidi(bass4, 0, 6) },
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 7, finger: 3, duration: 1, midi: fretMidi(bass4, 0, 7) },
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 8, finger: 4, duration: 1, midi: fretMidi(bass4, 0, 8) },
+    ])
+    // The anchor (finger 1, base fret) recurs at every even index of the pass.
+    const firstPass = steps.slice(0, 6)
+    expect(firstPass.filter((_, i) => i % 2 === 0).every((s) => s.finger === 1 && s.fret === 5)).toBe(true)
+  })
+
+  it('adjacent-string variant keeps the anchor on the base string, movers one string up', () => {
+    const steps = expandPattern(ANCHOR_ADJACENT_STRING, { tuning: bass4, position: 5 })
+    const firstPass = steps.slice(0, 6)
+    // Anchor notes stay on string 0; movers (finger 2/3/4) sit on string 1.
+    expect(firstPass.filter((s) => s.finger === 1).every((s) => s.string === 0)).toBe(true)
+    expect(firstPass.filter((s) => s.finger !== 1).every((s) => s.string === 1)).toBe(true)
+    expect(firstPass[1]).toMatchObject({ string: 1, fret: 6, finger: 2 })
+    expect(firstPass[5]).toMatchObject({ string: 1, fret: 8, finger: 4 })
+  })
+})
+
+describe('legato drills', () => {
+  it('hammer-on run tags fingers 2-3-4 as hammered, leaves the picked note plain', () => {
+    const steps = expandPattern(LEGATO_HAMMER_ASC, { tuning: bass4, position: 5 })
+    expect(steps.slice(0, 4)).toEqual([
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 6, finger: 2, duration: 1, midi: fretMidi(bass4, 0, 6), articulation: 'hammer' },
+      { string: 0, fret: 7, finger: 3, duration: 1, midi: fretMidi(bass4, 0, 7), articulation: 'hammer' },
+      { string: 0, fret: 8, finger: 4, duration: 1, midi: fretMidi(bass4, 0, 8), articulation: 'hammer' },
+    ])
+    // The first note of each string is picked (no articulation key).
+    expect('articulation' in steps[0]!).toBe(false)
+  })
+
+  it('pull-off run picks the pinky note then tags 3-2-1 as pulled', () => {
+    const steps = expandPattern(LEGATO_PULL_DESC, { tuning: bass4, position: 5 })
+    expect(steps.slice(0, 4)).toEqual([
+      { string: 0, fret: 8, finger: 4, duration: 1, midi: fretMidi(bass4, 0, 8) },
+      { string: 0, fret: 7, finger: 3, duration: 1, midi: fretMidi(bass4, 0, 7), articulation: 'pull' },
+      { string: 0, fret: 6, finger: 2, duration: 1, midi: fretMidi(bass4, 0, 6), articulation: 'pull' },
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5), articulation: 'pull' },
+    ])
+  })
+
+  it('trill combo alternates hammer and pull articulations', () => {
+    const steps = expandPattern(LEGATO_TRILL_COMBO, { tuning: bass4, position: 5 })
+    expect(steps.slice(0, 4).map((s) => s.articulation)).toEqual([undefined, 'hammer', 'pull', 'hammer'])
+  })
+
+  it('non-legato patterns produce steps with no articulation key', () => {
+    const steps = expandPattern(SPIDER_1234_UPDOWN, { tuning: bass4, position: 5 })
+    expect(steps.every((s) => !('articulation' in s))).toBe(true)
+  })
+})
+
 describe('patternsByCategory', () => {
   it('groups every builtin pattern into exactly one category', () => {
     const groups = patternsByCategory()
     const total = groups.reduce((sum, g) => sum + g.patterns.length, 0)
     expect(total).toBe(BUILTIN_PATTERNS.length)
-    expect(groups.map((g) => g.category)).toEqual(['spider', 'crossing', 'shift', 'roll', 'trill'])
+    expect(groups.map((g) => g.category)).toEqual([
+      'spider',
+      'crossing',
+      'shift',
+      'roll',
+      'trill',
+      'stretch',
+      'anchor',
+      'legato',
+    ])
     expect(groups.every((g) => g.patterns.length > 0)).toBe(true)
   })
 })
