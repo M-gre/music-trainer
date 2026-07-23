@@ -19,6 +19,7 @@
 
 import { pickAvoiding, type Rng } from './quiz.ts'
 import { Store, type StorageBackend } from './storage.ts'
+import { recordPractice } from './practiceLog.ts'
 import {
   arpeggioSteps,
   inversionCount,
@@ -190,6 +191,7 @@ export function accumulateStat(
   qualityId: string,
   correct: boolean,
 ): ChordQualityStats {
+  recordPractice()
   const prev = stats[qualityId] ?? { attempts: 0, correct: 0 }
   return {
     ...stats,

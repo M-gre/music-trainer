@@ -18,6 +18,7 @@
 
 import { pickAvoiding, type Rng } from './quiz.ts'
 import { Store, type StorageBackend } from './storage.ts'
+import { recordPractice } from './practiceLog.ts'
 import { getScale, MODE_IDS, SCALES, type Scale } from './theory/scales.ts'
 import { type Midi } from './theory/notes.ts'
 
@@ -207,6 +208,7 @@ export function accuracy(stat: ScaleStat | undefined): number | null {
  * folded into the tally for `scaleId`. Never mutates its input.
  */
 export function accumulateStat(stats: ScaleStats, scaleId: string, correct: boolean): ScaleStats {
+  recordPractice()
   const prev = stats[scaleId] ?? { attempts: 0, correct: 0 }
   return {
     ...stats,
