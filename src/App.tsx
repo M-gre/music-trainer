@@ -5,6 +5,7 @@ import { Metronome } from './pages/Metronome.tsx'
 import { FretboardNoteTrainer } from './pages/FretboardNoteTrainer.tsx'
 import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
 import { NoteReading } from './pages/NoteReading.tsx'
+import { ScalesExplorer } from './pages/ScalesExplorer.tsx'
 
 export interface Tool {
   route: string
@@ -45,6 +46,7 @@ export const TOOLS: Tool[] = [
     title: 'Scales & Modes',
     description: 'Visualize scales and modes on fretboard and keyboard.',
     tags: ['bass', 'guitar', 'piano', 'theory'],
+    page: () => <ScalesExplorer />,
   },
   {
     route: '/circle-of-fifths',

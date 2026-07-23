@@ -27,7 +27,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 ## M2 — Chords, scales & theory
 
-- [ ] Scales & Modes explorer: pick root + scale, see it on fretboard AND keyboard with degrees/intervals, play ascending/descending audio
+- [x] Scales & Modes explorer: pick root + scale, see it on fretboard AND keyboard with degrees/intervals, play ascending/descending audio
 - [ ] Chord Explorer: pick root + quality, tones shown on both instruments, arpeggio playback, inversions on keyboard
 - [x] Circle of Fifths: interactive SVG circle — key signatures, relative minors, click a key to see its scale and diatonic chords
 - [ ] Diatonic chords view: for a key, show I–vii° with numerals, play them
