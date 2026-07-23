@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Maskable icon: background fills the full canvas edge-to-edge (the OS
+       applies its own mask shape), glyph stays within the ~80% "safe zone"
+       circle centered on the canvas so it survives circular/rounded-square
+       cropping. -->
+  <rect width="512" height="512" fill="#14161a" />
+  <text
+    x="256"
+    y="266"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    font-size="200"
+    font-weight="700"
+    fill="#e8a33d"
+    text-anchor="middle"
+    dominant-baseline="central"
+  >♩</text>
+</svg>
