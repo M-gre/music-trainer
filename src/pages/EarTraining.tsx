@@ -39,6 +39,8 @@ import {
   generateIntervalQuestion,
   INTERVAL_PRESETS,
   intervalBySemitones,
+  intervalSrsKey,
+  intervalSrsStore,
   intervalStatsStore,
   normalizeEarTrainingSettings,
   normalizeStats,
@@ -58,6 +60,8 @@ import {
   checkChordQualityAnswer,
   CHORD_QUALITY_PRESETS,
   chordQualitySettingsStore,
+  chordQualitySrsKey,
+  chordQualitySrsStore,
   chordQualityStatsStore,
   generateChordQualityQuestion,
   inversionLabel,
@@ -87,6 +91,8 @@ import {
   scaleLabel,
   scaleSettingsStore,
   scaleShort,
+  scaleSrsKey,
+  scaleSrsStore,
   scaleStatsStore,
   SCALE_PRESETS,
   sortScaleIds,
@@ -96,6 +102,12 @@ import {
   type ScaleStats,
   type ScaleTrainingSettings,
 } from '../lib/scaleRecognitionTraining.ts'
+import {
+  normalizeSrsData,
+  qualityFromOutcome,
+  reviewKey,
+  type SrsData,
+} from '../lib/spacedRepetition.ts'
 import { getScale } from '../lib/theory/scales.ts'
 import { Fretboard, type FretboardMarker } from '../components/Fretboard.tsx'
 import { Keyboard, type KeyboardMarker } from '../components/Keyboard.tsx'
@@ -250,6 +262,11 @@ function IntervalTrainer({ fixedSettings, onAnswer }: IntervalTrainerProps = {})
   const [lifetimeStats, setLifetimeStats] = useState<IntervalStats>(() =>
     normalizeStats(intervalStatsStore.get()),
   )
+  // Spaced-repetition schedule (per interval + playback mode); biases question
+  // picking toward the items that are due for review.
+  const [srs, setSrs] = useState<SrsData>(() => normalizeSrsData(intervalSrsStore.get()))
+  const srsRef = useRef(srs)
+  srsRef.current = srs
 
   const clearAdvance = useCallback(() => {
     if (advanceTimeoutRef.current !== null) {
@@ -286,7 +303,11 @@ function IntervalTrainer({ fixedSettings, onAnswer }: IntervalTrainerProps = {})
   useEffect(() => {
     clearAdvance()
     const session = new QuizSession<IntervalQuestion, number>({
-      generate: (previous, rng) => generateIntervalQuestion(contextRef.current, previous, rng),
+      generate: (previous, rng) =>
+        generateIntervalQuestion(contextRef.current, previous, rng, {
+          srs: srsRef.current,
+          now: Date.now(),
+        }),
       check: checkIntervalAnswer,
     })
     sessionRef.current = session
@@ -325,6 +346,16 @@ function IntervalTrainer({ fixedSettings, onAnswer }: IntervalTrainerProps = {})
         intervalStatsStore.set(next)
         return next
       })
+      setSrs(
+        intervalSrsStore.update((d) =>
+          reviewKey(
+            d,
+            intervalSrsKey(q.semitones, q.mode),
+            qualityFromOutcome(res.correct, res.responseMs),
+            Date.now(),
+          ),
+        ),
+      )
       onAnswer?.(res.correct)
 
       if (res.correct) {
@@ -339,6 +370,8 @@ function IntervalTrainer({ fixedSettings, onAnswer }: IntervalTrainerProps = {})
     setSessionStats({})
     setLifetimeStats({})
     intervalStatsStore.set({})
+    intervalSrsStore.clear()
+    setSrs({})
   }, [])
 
   const answered = answer !== null
@@ -557,6 +590,10 @@ function ChordQualityTrainer({ fixedSettings, onAnswer }: ChordQualityTrainerPro
   const [lifetimeStats, setLifetimeStats] = useState<ChordQualityStats>(() =>
     normalizeChordQualityStats(chordQualityStatsStore.get()),
   )
+  // Spaced-repetition schedule (per quality); biases picking toward due items.
+  const [srs, setSrs] = useState<SrsData>(() => normalizeSrsData(chordQualitySrsStore.get()))
+  const srsRef = useRef(srs)
+  srsRef.current = srs
 
   const clearAdvance = useCallback(() => {
     if (advanceTimeoutRef.current !== null) {
@@ -612,7 +649,11 @@ function ChordQualityTrainer({ fixedSettings, onAnswer }: ChordQualityTrainerPro
   useEffect(() => {
     clearAdvance()
     const session = new QuizSession<ChordQualityQuestion, string>({
-      generate: (previous, rng) => generateChordQualityQuestion(contextRef.current, previous, rng),
+      generate: (previous, rng) =>
+        generateChordQualityQuestion(contextRef.current, previous, rng, {
+          srs: srsRef.current,
+          now: Date.now(),
+        }),
       check: checkChordQualityAnswer,
     })
     sessionRef.current = session
@@ -651,6 +692,16 @@ function ChordQualityTrainer({ fixedSettings, onAnswer }: ChordQualityTrainerPro
         chordQualityStatsStore.set(next)
         return next
       })
+      setSrs(
+        chordQualitySrsStore.update((d) =>
+          reviewKey(
+            d,
+            chordQualitySrsKey(q.qualityId),
+            qualityFromOutcome(res.correct, res.responseMs),
+            Date.now(),
+          ),
+        ),
+      )
       onAnswer?.(res.correct)
 
       if (res.correct) {
@@ -665,6 +716,8 @@ function ChordQualityTrainer({ fixedSettings, onAnswer }: ChordQualityTrainerPro
     setSessionStats({})
     setLifetimeStats({})
     chordQualityStatsStore.set({})
+    chordQualitySrsStore.clear()
+    setSrs({})
   }, [])
 
   const answered = answer !== null
@@ -950,6 +1003,10 @@ function ScaleTrainer({ fixedSettings, onAnswer }: ScaleTrainerProps = {}) {
   const [lifetimeStats, setLifetimeStats] = useState<ScaleStats>(() =>
     normalizeScaleStats(scaleStatsStore.get()),
   )
+  // Spaced-repetition schedule (per scale); biases picking toward due items.
+  const [srs, setSrs] = useState<SrsData>(() => normalizeSrsData(scaleSrsStore.get()))
+  const srsRef = useRef(srs)
+  srsRef.current = srs
 
   const clearAdvance = useCallback(() => {
     if (advanceTimeoutRef.current !== null) {
@@ -1007,7 +1064,11 @@ function ScaleTrainer({ fixedSettings, onAnswer }: ScaleTrainerProps = {}) {
   useEffect(() => {
     clearAdvance()
     const session = new QuizSession<ScaleQuestion, string>({
-      generate: (previous, rng) => generateScaleQuestion(contextRef.current, previous, rng),
+      generate: (previous, rng) =>
+        generateScaleQuestion(contextRef.current, previous, rng, {
+          srs: srsRef.current,
+          now: Date.now(),
+        }),
       check: checkScaleAnswer,
     })
     sessionRef.current = session
@@ -1046,6 +1107,16 @@ function ScaleTrainer({ fixedSettings, onAnswer }: ScaleTrainerProps = {}) {
         scaleStatsStore.set(next)
         return next
       })
+      setSrs(
+        scaleSrsStore.update((d) =>
+          reviewKey(
+            d,
+            scaleSrsKey(q.scaleId),
+            qualityFromOutcome(res.correct, res.responseMs),
+            Date.now(),
+          ),
+        ),
+      )
       onAnswer?.(res.correct)
 
       if (res.correct) {
@@ -1060,6 +1131,8 @@ function ScaleTrainer({ fixedSettings, onAnswer }: ScaleTrainerProps = {}) {
     setSessionStats({})
     setLifetimeStats({})
     scaleStatsStore.set({})
+    scaleSrsStore.clear()
+    setSrs({})
   }, [])
 
   const answered = answer !== null

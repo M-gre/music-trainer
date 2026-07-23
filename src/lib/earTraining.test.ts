@@ -12,6 +12,7 @@ import {
   DEFAULT_NOTE_GAP,
   generateIntervalQuestion,
   intervalBySemitones,
+  intervalSrsKey,
   MIN_ENABLED,
   normalizeEarTrainingSettings,
   normalizeEnabled,
@@ -25,6 +26,7 @@ import {
   type IntervalQuestion,
   type QuestionContext,
 } from './earTraining.ts'
+import { STEP_MS, type SrsData, type SrsItem } from './spacedRepetition.ts'
 
 /** Deterministic rng cycling through the given values in [0,1). */
 function seq(values: number[]): Rng {
@@ -34,6 +36,20 @@ function seq(values: number[]): Rng {
     i += 1
     return v
   }
+}
+
+/** A seeded LCG for distribution tests — deterministic but well-spread. */
+function lcg(seed: number): Rng {
+  let state = seed >>> 0
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+}
+
+/** A reviewed SRS item due at `due` (reviewed once, seen at `due`). */
+function srsItem(due: number): SrsItem {
+  return { interval: 1, ease: 2.5, due, lapses: 0, reps: 1, lastSeen: due }
 }
 
 describe('intervalBySemitones', () => {
@@ -132,6 +148,76 @@ describe('generateIntervalQuestion', () => {
     expect(() =>
       generateIntervalQuestion({ enabled: [], playback: 'harmonic' }, null, () => 0),
     ).toThrow()
+  })
+})
+
+describe('intervalSrsKey', () => {
+  it('combines the semitone count and the playback mode', () => {
+    expect(intervalSrsKey(7, 'melodic-asc')).toBe('7:melodic-asc')
+    expect(intervalSrsKey(7, 'melodic-desc')).toBe('7:melodic-desc')
+    expect(intervalSrsKey(7, 'harmonic')).toBe('7:harmonic')
+  })
+
+  it('separates the same interval by direction/voicing', () => {
+    expect(intervalSrsKey(3, 'melodic-asc')).not.toBe(intervalSrsKey(3, 'melodic-desc'))
+  })
+})
+
+describe('generateIntervalQuestion — SRS-influenced picking', () => {
+  const NOW = 1_000_000
+  const ctx: QuestionContext = { enabled: [3, 5, 7, 12], playback: 'melodic-asc' }
+
+  /** Count which intervals get picked over `n` draws (no immediate-repeat filter). */
+  function counts(srs: SrsData, n: number): Map<number, number> {
+    const rng = lcg(98765)
+    const out = new Map<number, number>()
+    for (let i = 0; i < n; i += 1) {
+      const q = generateIntervalQuestion(ctx, null, rng, { srs, now: NOW })
+      out.set(q.semitones, (out.get(q.semitones) ?? 0) + 1)
+    }
+    return out
+  }
+
+  it('only produces enabled intervals when picking', () => {
+    const rng = lcg(1)
+    let prev: IntervalQuestion | null = null
+    for (let i = 0; i < 40; i += 1) {
+      const q = generateIntervalQuestion(ctx, prev, rng, { srs: {}, now: NOW })
+      expect(ctx.enabled).toContain(q.semitones)
+      prev = q
+    }
+  })
+
+  it('avoids an immediate repeat when picking with more than one enabled', () => {
+    const rng = lcg(7)
+    let prev: IntervalQuestion | null = null
+    for (let i = 0; i < 60; i += 1) {
+      const q = generateIntervalQuestion(ctx, prev, rng, { srs: {}, now: NOW })
+      if (prev) expect(q.semitones).not.toBe(prev.semitones)
+      prev = q
+    }
+  })
+
+  it('favors an overdue interval over one not yet due', () => {
+    // Key is per (interval, mode); playback is fixed to melodic-asc here.
+    const srs: SrsData = {
+      [intervalSrsKey(3, 'melodic-asc')]: srsItem(NOW - 5 * STEP_MS), // very overdue
+      [intervalSrsKey(5, 'melodic-asc')]: srsItem(NOW + 100 * STEP_MS), // not due for ages
+      [intervalSrsKey(7, 'melodic-asc')]: srsItem(NOW + 100 * STEP_MS),
+      [intervalSrsKey(12, 'melodic-asc')]: srsItem(NOW + 100 * STEP_MS),
+    }
+    const c = counts(srs, 4000)
+    expect(c.get(3) ?? 0).toBeGreaterThan((c.get(5) ?? 0) * 3)
+  })
+
+  it('favors a never-seen interval over one not yet due', () => {
+    const srs: SrsData = {
+      // 3, 7, 12 are new (missing); 5 was just reviewed and is far from due.
+      [intervalSrsKey(5, 'melodic-asc')]: srsItem(NOW + 100 * STEP_MS),
+    }
+    const c = counts(srs, 4000)
+    const newAvg = [3, 7, 12].reduce((sum, s) => sum + (c.get(s) ?? 0), 0) / 3
+    expect(newAvg).toBeGreaterThan((c.get(5) ?? 0) * 2)
   })
 })
 

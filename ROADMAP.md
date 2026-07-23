@@ -71,7 +71,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 - [x] Practice dashboard: streaks, per-tool stats, suggested daily routine
 - [x] Spaced repetition: shared lib (`src/lib/spacedRepetition.ts`, SM-2-style scheduler) + wire into the note trainers (fretboard + keyboard)
-- [ ] Spaced repetition: wire into ear-training modes (interval, chord quality, scale recognition)
+- [x] Spaced repetition: wire into ear-training modes (interval, chord quality, scale recognition)
 - [ ] Spaced repetition: wire into note reading + theory quiz
 - [x] PWA manifest + service worker for full offline use (self-contained, CSP-compatible)
 - [ ] Keyboard shortcuts for quiz answering; accessibility pass (focus, ARIA, contrast)

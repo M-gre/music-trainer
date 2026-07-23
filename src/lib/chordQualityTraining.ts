@@ -18,6 +18,8 @@
  */
 
 import { pickAvoiding, type Rng } from './quiz.ts'
+import { pickWeighted } from './noteStats.ts'
+import { createSrsStore, srsWeight, type SrsData } from './spacedRepetition.ts'
 import { Store, type StorageBackend } from './storage.ts'
 import { recordPractice } from './practiceLog.ts'
 import {
@@ -102,25 +104,68 @@ export function pickInversion(rng: Rng, count: number): number {
 }
 
 /**
+ * Optional spaced-repetition picking. When supplied,
+ * `generateChordQualityQuestion` biases the quality choice toward the items
+ * that are due for review (see `spacedRepetition.srsWeight`) instead of drawing
+ * uniformly — still a weighted random draw, so sessions keep variety.
+ */
+export interface ChordQualityPicking {
+  /** Per-item spaced-repetition state (keyed by `chordQualitySrsKey`). */
+  srs: SrsData
+  /** Wall-clock now (ms) for due-ness weighting. */
+  now: number
+}
+
+/**
+ * SRS item key for a chord-quality answer-unit: the quality id alone. The
+ * inversion is a difficulty modifier (harder voicings of the *same* answer),
+ * never part of the answer the player gives, so all inversions of a quality
+ * share one schedule. The key is derivable straight from a question's
+ * `qualityId`.
+ */
+export function chordQualitySrsKey(qualityId: string): string {
+  return qualityId
+}
+
+/**
  * Generate the next chord-quality question. The quality is chosen from
  * `ctx.enabled`, avoiding an immediate repeat when more than one is enabled;
  * the root pitch class is randomized; the inversion stays at root position
  * unless `ctx.inversions` is on, in which case it is randomized across every
  * inversion the quality supports. Pure given `rng`.
+ *
+ * With `picking` supplied, the quality is drawn weighted by spaced-repetition
+ * due-ness (per `chordQualitySrsKey`) rather than uniformly; without it, the
+ * draw is uniform.
  */
 export function generateChordQualityQuestion(
   ctx: ChordQualityContext,
   previous: ChordQualityQuestion | null,
   rng: Rng,
+  picking?: ChordQualityPicking,
 ): ChordQualityQuestion {
   if (ctx.enabled.length === 0) {
     throw new Error('generateChordQualityQuestion: no enabled qualities')
   }
-  const qualityId = pickAvoiding(ctx.enabled, previous?.qualityId ?? null, rng)
+  const qualityId = picking
+    ? pickWeightedQuality(ctx.enabled, previous?.qualityId ?? null, picking, rng)
+    : pickAvoiding(ctx.enabled, previous?.qualityId ?? null, rng)
   const root = pickChordRoot(rng)
   const quality = getChordQuality(qualityId)
   const inversion = ctx.inversions ? pickInversion(rng, inversionCount(quality)) : 0
   return { root, qualityId, inversion }
+}
+
+/** Weighted quality draw (SRS due-ness), avoiding an immediate repeat. */
+function pickWeightedQuality(
+  enabled: readonly string[],
+  previous: string | null,
+  picking: ChordQualityPicking,
+  rng: Rng,
+): string {
+  const filtered = previous === null ? enabled : enabled.filter((id) => id !== previous)
+  const pool = filtered.length > 0 ? filtered : enabled
+  return pickWeighted(pool, (id) => srsWeight(picking.srs[chordQualitySrsKey(id)], picking.now), rng)
 }
 
 /** Grade an answer: is the picked quality id the question's quality? */
@@ -303,3 +348,10 @@ export function createChordQualityStatsStore(backend?: StorageBackend): Store<Ch
 /** App-wide localStorage-backed stores. */
 export const chordQualitySettingsStore = createChordQualitySettingsStore()
 export const chordQualityStatsStore = createChordQualityStatsStore()
+
+/**
+ * Per-item spaced-repetition schedule for chord-quality recognition
+ * (`mt:srs:ear-chord`). Keyed by `chordQualitySrsKey`. Tests build their own
+ * via `createSrsStore`.
+ */
+export const chordQualitySrsStore = createSrsStore('ear-chord')
