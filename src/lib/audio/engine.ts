@@ -92,6 +92,13 @@ const VOICE_LEVEL = 0.35
 /** Short ramp used when changing the master volume so it never clicks. */
 const VOLUME_RAMP = 0.02
 
+/** Fade-in of a click so the attack transient is snappy but not a hard step. */
+const CLICK_ATTACK = 0.001
+/** Default gain of a click blip (0..1). */
+const DEFAULT_CLICK_GAIN = 0.6
+/** Default total length of a click blip, seconds. */
+const DEFAULT_CLICK_DURATION = 0.04
+
 // --- Options ----------------------------------------------------------------
 
 export interface PlayNoteOptions extends Partial<AdsrParams> {
@@ -106,6 +113,19 @@ export interface PlayNoteOptions extends Partial<AdsrParams> {
    * Default 8. Pass 0 for a single-pitch, phase-locked pair.
    */
   detune?: number
+}
+
+export interface ClickOptions {
+  /** Click pitch in Hz. Higher reads as a stronger accent. */
+  frequency: number
+  /** Peak linear gain, 0..1. Default 0.6. */
+  gain?: number
+  /** Total blip length in seconds. Default 0.04. Kept short so it never rings. */
+  duration?: number
+  /** Absolute AudioContext start time. Default: now. */
+  when?: number
+  /** Oscillator waveform. Default `'square'` for a clicky transient. */
+  type?: OscillatorType
 }
 
 // --- Engine -----------------------------------------------------------------
@@ -158,6 +178,16 @@ export class AudioEngine {
   /** Whether the context has been created yet. */
   get isInitialized(): boolean {
     return this.ctx !== null
+  }
+
+  /**
+   * The audio clock in seconds (0 before the context exists). Exposed so the
+   * engine satisfies the scheduler's `SchedulerClock` interface structurally —
+   * `new Scheduler(engine, …)` — keeping scheduled `when` times and the
+   * engine's playback on a single, shared time base.
+   */
+  get currentTime(): number {
+    return this.ctx?.currentTime ?? 0
   }
 
   /** Current master volume (0..1). */
@@ -234,6 +264,37 @@ export class AudioEngine {
       osc.start(when)
       osc.stop(env.stopTime)
     }
+  }
+
+  /**
+   * Play a short percussive click (metronome tick, count-in, etc.) through the
+   * shared master chain. Unlike `playNote` this is a single oscillator with a
+   * fast linear decay to silence — clicky and dry, with no sustain or release
+   * ring. Accent vs. subdivision is just a matter of `frequency`/`gain`.
+   */
+  playClick(opts: ClickOptions): void {
+    const { ctx, master } = this.init()
+    const when = opts.when ?? ctx.currentTime
+    const peak = clamp01(opts.gain ?? DEFAULT_CLICK_GAIN)
+    const duration = Math.max(CLICK_ATTACK * 2, opts.duration ?? DEFAULT_CLICK_DURATION)
+
+    const clickGain = ctx.createGain()
+    clickGain.gain.value = 0
+    clickGain.connect(master)
+    clickGain.gain.setValueAtTime(0, when)
+    clickGain.gain.linearRampToValueAtTime(peak, when + CLICK_ATTACK)
+    clickGain.gain.linearRampToValueAtTime(0, when + duration)
+
+    const osc = ctx.createOscillator()
+    osc.type = opts.type ?? 'square'
+    osc.frequency.setValueAtTime(opts.frequency, when)
+    osc.connect(clickGain)
+    osc.onended = (): void => {
+      osc.disconnect()
+      clickGain.disconnect()
+    }
+    osc.start(when)
+    osc.stop(when + duration + CLICK_ATTACK)
   }
 
   /** Play several notes at once with shared options. */

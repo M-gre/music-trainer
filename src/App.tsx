@@ -1,6 +1,7 @@
 import { useHashRoute } from './router.ts'
 import { Home } from './pages/Home.tsx'
 import { NotFound } from './pages/NotFound.tsx'
+import { Metronome } from './pages/Metronome.tsx'
 
 export interface Tool {
   route: string
@@ -76,6 +77,7 @@ export const TOOLS: Tool[] = [
     title: 'Metronome',
     description: 'Accents, subdivisions, and tempo trainer.',
     tags: ['rhythm'],
+    page: () => <Metronome />,
   },
 ]
 

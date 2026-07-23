@@ -346,3 +346,216 @@ a.tool-card:hover {
   outline: none;
   border-color: var(--accent);
 }
+
+/* ---- Tool page layout (shared by all tool pages) ---- */
+
+.tool-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.tool-page-header h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.35rem;
+}
+
+.tool-page-lead {
+  color: var(--text-dim);
+  max-width: 42rem;
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.tool-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.tool-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  flex: 1 1 14rem;
+}
+
+.tool-control-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+/* ---- Metronome ---- */
+
+.mn-beats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.mn-dot {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  transition: transform 60ms ease, background 60ms ease, border-color 60ms ease;
+}
+
+.mn-dot-one {
+  border-color: var(--accent-dim);
+}
+
+.mn-dot-active {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  transform: scale(1.2);
+}
+
+.mn-dot-one.mn-dot-active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.mn-tempo-group {
+  flex: 1 1 100%;
+}
+
+.mn-tempo-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.mn-tempo-value {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.mn-tempo-unit {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mn-steppers {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.mn-stepper {
+  flex: 1 1 0;
+  padding: 0.5rem 0;
+  min-height: 2.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mn-stepper:hover {
+  border-color: var(--accent-dim);
+}
+
+.mn-stepper:active {
+  background: var(--bg-hover);
+}
+
+.mn-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.mn-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.mn-segment {
+  flex: 1 1 3.5rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mn-segment:hover {
+  border-color: var(--accent-dim);
+}
+
+.mn-segment-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.mn-transport {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.mn-start,
+.mn-tap {
+  min-height: 3.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  border: 1px solid var(--border);
+}
+
+.mn-start {
+  flex: 2 1 0;
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.mn-start-active {
+  color: var(--text);
+  background: #b8433a;
+  border-color: #b8433a;
+}
+
+.mn-tap {
+  flex: 1 1 0;
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+.mn-tap:hover {
+  border-color: var(--accent-dim);
+}
+
+.mn-tap:active {
+  background: var(--bg-hover);
+}

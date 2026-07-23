@@ -239,6 +239,54 @@ describe('AudioEngine.playNote', () => {
   })
 })
 
+describe('AudioEngine.currentTime', () => {
+  it('is 0 before the context exists and tracks the clock afterwards', () => {
+    const { engine } = makeEngine()
+    expect(engine.currentTime).toBe(0)
+    engine.getMasterInput()
+    expect(engine.currentTime).toBe(10)
+  })
+})
+
+describe('AudioEngine.playClick', () => {
+  it('wires a single oscillator through a click gain into the master', () => {
+    const { engine, factory } = makeEngine()
+    engine.playClick({ frequency: 1200, when: 5, gain: 0.5, duration: 0.04 })
+    const ctx = factory()
+    expect(ctx.oscillators.length).toBe(1)
+    expect(ctx.gains.length).toBe(2) // master + click gain
+    const master = ctx.gains[0]!
+    const click = ctx.gains[1]!
+    const osc = ctx.oscillators[0]!
+    expect(click.connectedTo).toContain(master)
+    expect(osc.connectedTo).toContain(click)
+    expect(osc.type).toBe('square')
+    expect(osc.frequency.events[0]?.value).toBe(1200)
+    expect(osc.started).toBe(5)
+    expect(osc.stopped).toBeGreaterThan(5)
+  })
+
+  it('rises to the peak gain then decays back to silence', () => {
+    const { engine, factory } = makeEngine()
+    engine.playClick({ frequency: 1000, when: 0, gain: 0.5, duration: 0.04 })
+    const click = factory().gains[1]!
+    const linear = click.gain.events.filter((e) => e.type === 'linear')
+    expect(linear[0]?.value).toBe(0.5)
+    expect(linear[linear.length - 1]?.value).toBe(0)
+  })
+
+  it('disconnects its nodes when the oscillator ends', () => {
+    const { engine, factory } = makeEngine()
+    engine.playClick({ frequency: 1000 })
+    const ctx = factory()
+    const click = ctx.gains[1]!
+    const osc = ctx.oscillators[0] as FakeOscillator
+    osc.fireEnded()
+    expect(osc.disconnected).toBe(true)
+    expect(click.disconnected).toBe(true)
+  })
+})
+
 describe('AudioEngine.playChord', () => {
   it('plays one voice per note into the shared master', () => {
     const { engine, factory } = makeEngine()
