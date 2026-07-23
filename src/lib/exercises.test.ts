@@ -12,6 +12,8 @@ import {
   POSITION_SHIFT_1234,
   positionForLoop,
   RAKE_ARPEGGIO,
+  ROLL_ONE_FINGER,
+  ROLL_PER_STRING,
   SIXTHS_SKIP_STRING,
   SPIDER_1234_UPDOWN,
   SPIDER_1324_UPDOWN,
@@ -22,6 +24,9 @@ import {
   stepTimings,
   STRING_CROSSING_12,
   THREE_NPS_SHIFT,
+  TRILL_12,
+  TRILL_13,
+  TRILL_14,
   type ExercisePattern,
 } from './exercises.ts'
 
@@ -369,12 +374,66 @@ describe('applyDirection', () => {
   })
 })
 
+describe('finger-roll drills', () => {
+  it('Index Roll rolls one finger across every string at the same fret, up then down', () => {
+    const steps = expandPattern(ROLL_ONE_FINGER, { tuning: bass4, position: 5 })
+    // 4 strings up + 4 strings down, single note each.
+    expect(steps).toHaveLength(8)
+    expect(steps.every((s) => s.fret === 5 && s.finger === 1)).toBe(true)
+    expect(steps.map((s) => s.string)).toEqual([0, 1, 2, 3, 3, 2, 1, 0])
+  })
+
+  it('Finger-Per-String Roll plants one finger per adjacent string on a single fret', () => {
+    const steps = expandPattern(ROLL_PER_STRING, { tuning: bass4, position: 5 })
+    expect(steps.slice(0, 4)).toEqual([
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 1, fret: 5, finger: 2, duration: 1, midi: fretMidi(bass4, 1, 5) },
+      { string: 2, fret: 5, finger: 3, duration: 1, midi: fretMidi(bass4, 2, 5) },
+      { string: 3, fret: 5, finger: 4, duration: 1, midi: fretMidi(bass4, 3, 5) },
+    ])
+    // Every note sits on the same fret (no shift) and stays on the board.
+    expect(steps.every((s) => s.fret === 5 && s.string >= 0 && s.string < bass4.strings.length)).toBe(true)
+  })
+
+  it('renders on any string count (tuning-aware)', () => {
+    const steps = expandPattern(ROLL_ONE_FINGER, { tuning: guitar6, position: 3 })
+    expect(steps).toHaveLength(12) // 6 strings up + 6 down
+    expect(steps.every((s) => s.fret === 3)).toBe(true)
+  })
+})
+
+describe('trill / burst drills', () => {
+  it('Trill 1-2 alternates index and middle a half step apart on each string', () => {
+    const steps = expandPattern(TRILL_12, { tuning: bass4, position: 5 })
+    expect(steps).toHaveLength(16) // 4-note burst x 4 strings
+    expect(steps.slice(0, 4)).toEqual([
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 6, finger: 2, duration: 1, midi: fretMidi(bass4, 0, 6) },
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 6, finger: 2, duration: 1, midi: fretMidi(bass4, 0, 6) },
+    ])
+  })
+
+  it('widens the trill span with the finger pair (1-3 whole step, 1-4 minor third)', () => {
+    const t13 = expandPattern(TRILL_13, { tuning: bass4, position: 5 })
+    expect(t13.slice(0, 2)).toEqual([
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 7, finger: 3, duration: 1, midi: fretMidi(bass4, 0, 7) },
+    ])
+    const t14 = expandPattern(TRILL_14, { tuning: bass4, position: 5 })
+    expect(t14.slice(0, 2)).toEqual([
+      { string: 0, fret: 5, finger: 1, duration: 1, midi: fretMidi(bass4, 0, 5) },
+      { string: 0, fret: 8, finger: 4, duration: 1, midi: fretMidi(bass4, 0, 8) },
+    ])
+  })
+})
+
 describe('patternsByCategory', () => {
   it('groups every builtin pattern into exactly one category', () => {
     const groups = patternsByCategory()
     const total = groups.reduce((sum, g) => sum + g.patterns.length, 0)
     expect(total).toBe(BUILTIN_PATTERNS.length)
-    expect(groups.map((g) => g.category)).toEqual(['spider', 'crossing', 'shift'])
+    expect(groups.map((g) => g.category)).toEqual(['spider', 'crossing', 'shift', 'roll', 'trill'])
     expect(groups.every((g) => g.patterns.length > 0)).toBe(true)
   })
 })

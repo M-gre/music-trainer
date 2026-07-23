@@ -3005,39 +3005,46 @@ a.tool-card:hover {
 
 /* ---- Dexterity Exercises ---- */
 
-.dx-pattern-group {
-  flex: 1 1 22rem;
+/* Two-pane layout: a compact drill picker (one-line entries + a single
+   description panel for the selected drill) beside the board/strip/transport
+   stage. Collapses to a single column on narrow screens. */
+.dx-main {
+  display: grid;
+  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
 }
 
-.dx-patterns {
+@media (max-width: 780px) {
+  .dx-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dx-picker {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.6rem;
+  min-width: 0;
 }
 
-.dx-pattern-category {
+.dx-drill-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
-.dx-pattern-category-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
-}
-
-.dx-pattern {
+/* One-line drill entry: name + short tagline, no paragraph. */
+.dx-drill {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.1rem;
   text-align: left;
-  padding: 0.6rem 0.75rem;
+  padding: 0.45rem 0.7rem;
   min-height: 44px;
+  justify-content: center;
   color: var(--text);
-  background: var(--bg);
+  background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
@@ -3045,33 +3052,170 @@ a.tool-card:hover {
   touch-action: manipulation;
 }
 
-.dx-pattern:hover {
+.dx-drill:hover {
   border-color: var(--accent-dim);
 }
 
-.dx-pattern-active {
+.dx-drill-active {
   border-color: var(--accent);
   background: var(--bg-hover);
 }
 
-.dx-pattern-name {
+.dx-drill-name {
   font-size: 0.92rem;
   font-weight: 600;
 }
 
-.dx-pattern-active .dx-pattern-name {
+.dx-drill-active .dx-drill-name {
   color: var(--accent);
 }
 
-.dx-pattern-desc {
-  font-size: 0.78rem;
+.dx-drill-tag {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  line-height: 1.25;
+}
+
+/* Single description panel for the currently selected drill + its parameters. */
+.dx-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.dx-panel-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.dx-panel-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
   color: var(--text-dim);
 }
 
-.dx-permutation-picker {
+.dx-variant {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dx-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+/* Suggested finger-order chips for the spider drill ("today's set"). */
+.dx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dx-chip {
+  min-height: 44px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.dx-chip:hover {
+  border-color: var(--accent-dim);
+}
+
+.dx-chip-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.dx-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* Grouped settings: a primary row (instrument/fret/tempo) plus a collapsible
+   "Feel & motion" section (rhythm/accent/direction/auto-advance). */
+.dx-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dx-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.dx-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 0.85rem;
+  flex: 1 1 12rem;
+}
+
+.dx-more {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.dx-more[open] {
+  padding-bottom: 0.75rem;
+}
+
+.dx-more-summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.dx-more[open] .dx-more-summary {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.dx-more .dx-settings-row {
+  padding: 0 0.75rem;
+}
+
+/* The collapsible section's inner settings sit flat (the details box already
+   provides the raised surface), so drop their individual box chrome. */
+.dx-more .dx-setting {
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 
 .dx-select {
@@ -3598,10 +3742,6 @@ a.tool-card:hover {
   font-size: 0.85rem;
   color: var(--text-dim);
   text-align: left;
-}
-
-.dx-scale-group {
-  gap: 0.75rem;
 }
 
 .dx-scale-fields {
