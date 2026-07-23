@@ -4189,3 +4189,32 @@ a.tool-card:hover {
 .dx-strip-slur-pull {
   background: var(--text-dim);
 }
+
+.sc-key {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0.95rem;
+  height: 0.95rem;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* One-line "press 1–N" affordance under an answer grid. */
+.sc-hint {
+  margin: 0.5rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  text-align: center;
+}

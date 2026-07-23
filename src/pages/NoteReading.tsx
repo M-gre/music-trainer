@@ -68,6 +68,8 @@ import {
 } from '../lib/noteReading.ts'
 import { normalizeSrsData, qualityFromOutcome, reviewKey, type SrsData } from '../lib/spacedRepetition.ts'
 import { recordPractice } from '../lib/practiceLog.ts'
+import { useAnswerShortcuts } from '../hooks/useAnswerShortcuts.ts'
+import { shortcutLabel } from '../lib/answerShortcuts.ts'
 
 const FROM_FRET = 0
 const TO_FRET = 12
@@ -324,6 +326,22 @@ export function NoteReading() {
 
   const showStage = settings.mode === 'practice' || timedPhase === 'running'
 
+  // With the "Name" input, number keys 1–9 pick the first nine note buttons
+  // (C … G♯); the fretboard/keyboard inputs stay tap-only. Bound only while an
+  // answer can actually be submitted (not locked, and the run is live).
+  const nameInputActive =
+    settings.inputMode === 'name' &&
+    !locked &&
+    (settings.mode === 'practice' || timedPhase === 'running')
+  const selectNote = useCallback(
+    (index: number) => submit({ kind: 'name', pc: index }),
+    [submit],
+  )
+  useAnswerShortcuts({
+    optionCount: nameInputActive ? SHARP_NAMES.length : 0,
+    onSelect: selectNote,
+  })
+
   return (
     <div className="tool-page">
       <div className="tool-page-header">
@@ -541,17 +559,26 @@ export function NoteReading() {
           <div className="nr-answer">
             {settings.inputMode === 'name' && (
               <div className="nr-names" role="group" aria-label="Note names">
-                {SHARP_NAMES.map((name, pc) => (
-                  <button
-                    key={name}
-                    type="button"
-                    className="nr-name"
-                    disabled={locked}
-                    onClick={() => submit({ kind: 'name', pc })}
-                  >
-                    {name}
-                  </button>
-                ))}
+                {SHARP_NAMES.map((name, pc) => {
+                  const key = shortcutLabel(pc)
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      className="nr-name"
+                      disabled={locked}
+                      title={key ? `Shortcut: press ${key}` : undefined}
+                      onClick={() => submit({ kind: 'name', pc })}
+                    >
+                      {key && (
+                        <span className="sc-key" aria-hidden="true">
+                          {key}
+                        </span>
+                      )}
+                      {name}
+                    </button>
+                  )
+                })}
               </div>
             )}
 
