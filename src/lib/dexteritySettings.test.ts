@@ -34,7 +34,11 @@ describe('clampFret', () => {
 describe('normalizeDexteritySettings', () => {
   it('passes through a valid value', () => {
     const value = {
+      mode: 'scale',
       patternId: 'chromatic-4nps',
+      scaleRootPc: 3,
+      scaleId: 'dorian',
+      sequenceId: 'groups-of-4',
       position: 7,
       bpm: 100,
       notesPerBeat: 2,
@@ -44,6 +48,21 @@ describe('normalizeDexteritySettings', () => {
       direction: 'reverse',
     }
     expect(normalizeDexteritySettings(value)).toEqual(value)
+  })
+
+  it('rejects an unknown scale id, sequence id, and mode', () => {
+    expect(normalizeDexteritySettings({ scaleId: 'bogus' }).scaleId).toBe(
+      DEFAULT_DEXTERITY_SETTINGS.scaleId,
+    )
+    expect(normalizeDexteritySettings({ sequenceId: 'bogus' }).sequenceId).toBe(
+      DEFAULT_DEXTERITY_SETTINGS.sequenceId,
+    )
+    expect(normalizeDexteritySettings({ mode: 'bogus' }).mode).toBe(DEFAULT_DEXTERITY_SETTINGS.mode)
+  })
+
+  it('wraps the scale root pitch class into 0–11', () => {
+    expect(normalizeDexteritySettings({ scaleRootPc: 14 }).scaleRootPc).toBe(2)
+    expect(normalizeDexteritySettings({ scaleRootPc: -1 }).scaleRootPc).toBe(11)
   })
 
   it('rejects an unknown pattern id', () => {
@@ -90,23 +109,55 @@ describe('migrateDexteritySettings', () => {
       advanceMin: 3,
       advanceMax: 9,
     }
-    expect(migrateDexteritySettings(v1Data)).toEqual({ ...v1Data, direction: DEFAULT_DEXTERITY_SETTINGS.direction })
+    expect(migrateDexteritySettings(v1Data)).toEqual({
+      ...v1Data,
+      direction: DEFAULT_DEXTERITY_SETTINGS.direction,
+      mode: DEFAULT_DEXTERITY_SETTINGS.mode,
+      scaleRootPc: DEFAULT_DEXTERITY_SETTINGS.scaleRootPc,
+      scaleId: DEFAULT_DEXTERITY_SETTINGS.scaleId,
+      sequenceId: DEFAULT_DEXTERITY_SETTINGS.sequenceId,
+    })
   })
 
-  it('a v1-tagged envelope in the store is transparently upgraded to v2', () => {
+  it('fills in the scale-sequence fields with defaults for v2 data that lacks them', () => {
+    const v2Data = {
+      patternId: 'chromatic-4nps',
+      position: 7,
+      bpm: 100,
+      notesPerBeat: 2,
+      autoAdvance: true,
+      advanceMin: 3,
+      advanceMax: 9,
+      direction: 'reverse',
+    }
+    expect(migrateDexteritySettings(v2Data)).toEqual({
+      ...v2Data,
+      mode: DEFAULT_DEXTERITY_SETTINGS.mode,
+      scaleRootPc: DEFAULT_DEXTERITY_SETTINGS.scaleRootPc,
+      scaleId: DEFAULT_DEXTERITY_SETTINGS.scaleId,
+      sequenceId: DEFAULT_DEXTERITY_SETTINGS.sequenceId,
+    })
+  })
+
+  it('a v2-tagged envelope in the store is transparently upgraded to v3', () => {
     const backend = memoryBackend()
-    const v1Data = { ...DEFAULT_DEXTERITY_SETTINGS, bpm: 140 } as Partial<DexteritySettings>
-    delete v1Data.direction
-    backend.setItem('mt:settings:dexterity', JSON.stringify({ v: 1, data: v1Data }))
+    const v2Data = { ...DEFAULT_DEXTERITY_SETTINGS, bpm: 140 } as Partial<DexteritySettings>
+    delete v2Data.mode
+    delete v2Data.scaleRootPc
+    delete v2Data.scaleId
+    delete v2Data.sequenceId
+    backend.setItem('mt:settings:dexterity', JSON.stringify({ v: 2, data: v2Data }))
 
     const store = createDexteritySettingsStore(backend)
     const loaded = store.get()
-    expect(loaded.direction).toBe(DEFAULT_DEXTERITY_SETTINGS.direction)
+    expect(loaded.mode).toBe(DEFAULT_DEXTERITY_SETTINGS.mode)
+    expect(loaded.scaleId).toBe(DEFAULT_DEXTERITY_SETTINGS.scaleId)
+    expect(loaded.sequenceId).toBe(DEFAULT_DEXTERITY_SETTINGS.sequenceId)
     expect(loaded.bpm).toBe(140)
 
     // The migration also persists the upgraded shape.
     const rawAfter = JSON.parse(backend.getItem('mt:settings:dexterity')!) as { v: number }
-    expect(rawAfter.v).toBe(2)
+    expect(rawAfter.v).toBe(3)
   })
 })
 

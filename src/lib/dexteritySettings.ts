@@ -7,8 +7,10 @@
  * unit-tested without React.
  *
  * v2 added `direction` (forward / reverse / forward-then-reverse playback,
- * independent of a pattern's own traversal); v1 data is migrated by filling
- * it in with the default (`normalizeDexteritySettings` handles this).
+ * independent of a pattern's own traversal); v3 added the scale-sequence drill
+ * fields (`mode`, `scaleRootPc`, `scaleId`, `sequenceId`). Older data is
+ * migrated by filling any missing field in with its default
+ * (`normalizeDexteritySettings` handles this for every version).
  */
 
 import {
@@ -20,7 +22,10 @@ import {
   type Direction,
 } from './exercises.ts'
 import { isPermutationId } from './permutations.ts'
+import { DEFAULT_SEQUENCE_ID, isSequencePatternId, type SequencePatternId } from './scaleSequences.ts'
 import { Store, type StorageBackend } from './storage.ts'
+import { mod12 } from './theory/notes.ts'
+import { SCALES } from './theory/scales.ts'
 
 /** Tempo range offered by the slider/steppers (beats per minute). */
 export const MIN_BPM = 30
@@ -33,9 +38,22 @@ export const MAX_FRET = 22
 /** Selectable notes-per-beat (metronome subdivisions driving step advancement). */
 export const NOTES_PER_BEAT_OPTIONS = [1, 2, 3, 4] as const
 
+/** Which family of drill the tool is showing: built-in patterns or scale sequences. */
+export type DexterityMode = 'pattern' | 'scale'
+
+export const DEXTERITY_MODES: readonly DexterityMode[] = ['pattern', 'scale']
+
 export interface DexteritySettings {
-  /** Chosen pattern id. */
+  /** Whether the tool is running a built-in pattern or a scale-sequence drill. */
+  mode: DexterityMode
+  /** Chosen pattern id (used in `mode: 'pattern'`). */
   patternId: string
+  /** Scale root pitch class 0–11 (used in `mode: 'scale'`). */
+  scaleRootPc: number
+  /** Scale id from `SCALES` (used in `mode: 'scale'`). */
+  scaleId: string
+  /** Sequence pattern id (used in `mode: 'scale'`). */
+  sequenceId: SequencePatternId
   /** Starting fret (the position's base/index fret). */
   position: number
   /** Tempo in beats per minute. */
@@ -53,7 +71,11 @@ export interface DexteritySettings {
 }
 
 export const DEFAULT_DEXTERITY_SETTINGS: DexteritySettings = {
+  mode: 'pattern',
   patternId: DEFAULT_PATTERN_ID,
+  scaleRootPc: 0,
+  scaleId: 'major',
+  sequenceId: DEFAULT_SEQUENCE_ID,
   position: 5,
   bpm: 80,
   notesPerBeat: 1,
@@ -84,11 +106,25 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
   const v = (typeof value === 'object' && value !== null ? value : {}) as Partial<
     Record<keyof DexteritySettings, unknown>
   >
+  const mode: DexterityMode =
+    v.mode === 'pattern' || v.mode === 'scale' ? v.mode : DEFAULT_DEXTERITY_SETTINGS.mode
   const patternId =
     typeof v.patternId === 'string' &&
     (BUILTIN_PATTERNS.some((p) => p.id === v.patternId) || isPermutationId(v.patternId))
       ? v.patternId
       : DEFAULT_DEXTERITY_SETTINGS.patternId
+  const scaleRootPc =
+    typeof v.scaleRootPc === 'number' && Number.isFinite(v.scaleRootPc)
+      ? mod12(Math.round(v.scaleRootPc))
+      : DEFAULT_DEXTERITY_SETTINGS.scaleRootPc
+  const scaleId =
+    typeof v.scaleId === 'string' && SCALES.some((s) => s.id === v.scaleId)
+      ? v.scaleId
+      : DEFAULT_DEXTERITY_SETTINGS.scaleId
+  const sequenceId: SequencePatternId =
+    typeof v.sequenceId === 'string' && isSequencePatternId(v.sequenceId)
+      ? v.sequenceId
+      : DEFAULT_DEXTERITY_SETTINGS.sequenceId
   const position = typeof v.position === 'number' ? clampFret(v.position) : DEFAULT_DEXTERITY_SETTINGS.position
   const bpm = typeof v.bpm === 'number' ? clampBpm(v.bpm) : DEFAULT_DEXTERITY_SETTINGS.bpm
   const notesPerBeat =
@@ -107,12 +143,27 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
       ? (v.direction as Direction)
       : DEFAULT_DEXTERITY_SETTINGS.direction
 
-  return { patternId, position, bpm, notesPerBeat, autoAdvance, advanceMin, advanceMax, direction }
+  return {
+    mode,
+    patternId,
+    scaleRootPc,
+    scaleId,
+    sequenceId,
+    position,
+    bpm,
+    notesPerBeat,
+    autoAdvance,
+    advanceMin,
+    advanceMax,
+    direction,
+  }
 }
 
 /**
  * Migrate persisted data from an older schema version. v1 lacked `direction`;
- * `normalizeDexteritySettings` fills it in with the default (`forward`).
+ * v2 lacked the scale-sequence fields (`mode`, `scaleRootPc`, `scaleId`,
+ * `sequenceId`). `normalizeDexteritySettings` fills every missing field in
+ * with its default, so a single pass upgrades data from any prior version.
  */
 export function migrateDexteritySettings(oldData: unknown): DexteritySettings {
   return normalizeDexteritySettings(oldData)
@@ -123,7 +174,7 @@ export function createDexteritySettingsStore(backend?: StorageBackend): Store<De
   return new Store<DexteritySettings>(
     {
       key: 'settings:dexterity',
-      version: 2,
+      version: 3,
       defaultValue: DEFAULT_DEXTERITY_SETTINGS,
       migrate: migrateDexteritySettings,
     },
