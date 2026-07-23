@@ -5,6 +5,7 @@ import { Metronome } from './pages/Metronome.tsx'
 import { FretboardNoteTrainer } from './pages/FretboardNoteTrainer.tsx'
 import { KeyboardNoteTrainer } from './pages/KeyboardNoteTrainer.tsx'
 import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
+import { TheoryQuiz } from './pages/TheoryQuiz.tsx'
 import { NoteReading } from './pages/NoteReading.tsx'
 import { ScalesExplorer } from './pages/ScalesExplorer.tsx'
 import { ChordExplorer } from './pages/ChordExplorer.tsx'
@@ -58,6 +59,13 @@ export const TOOLS: Tool[] = [
     description: 'Interactive circle with key signatures and relative keys.',
     tags: ['theory'],
     page: () => <CircleOfFifths />,
+  },
+  {
+    route: '/theory-quiz',
+    title: 'Theory Quiz',
+    description: 'Key signatures, diatonic chords, and intervals.',
+    tags: ['theory'],
+    page: () => <TheoryQuiz />,
   },
   {
     route: '/note-reading',
