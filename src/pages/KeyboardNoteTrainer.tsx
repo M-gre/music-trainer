@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Keyboard, type KeyboardMarker } from '../components/Keyboard.tsx'
+import { NoteStatsPanel } from '../components/NoteStatsPanel.tsx'
 import { octaveRangeToMidi } from '../components/keyboardGeometry.ts'
 import { getAudioEngine } from '../lib/audio/index.ts'
 import { midiToName, midiToPc, pcToName, type PitchClass } from '../lib/theory/notes.ts'
@@ -26,6 +27,14 @@ import {
   type FindAllProgress,
   type QuizStats,
 } from '../lib/quiz.ts'
+import {
+  emptyNoteStats,
+  keyboardStatsStore,
+  normalizeNoteStats,
+  recordFindAllRound,
+  recordOutcome,
+  type NoteStatsData,
+} from '../lib/noteStats.ts'
 import {
   checkAnswer,
   findAllTargetKeys,
@@ -75,6 +84,15 @@ export function KeyboardNoteTrainer() {
     keyboardTrainerSettingsStore.set(settings)
   }, [settings])
 
+  const [noteStats, setNoteStats] = useState<NoteStatsData>(() =>
+    normalizeNoteStats(keyboardStatsStore.get()),
+  )
+  // Refs so the stable question generator reads the latest stats / toggle.
+  const statsRef = useRef(noteStats)
+  statsRef.current = noteStats
+  const focusWeakRef = useRef(settings.focusWeak)
+  focusWeakRef.current = settings.focusWeak
+
   const { from: fromMidi, to: toMidi } = useMemo(
     () => octaveRangeToMidi(settings.fromOctave, settings.toOctave),
     [settings.fromOctave, settings.toOctave],
@@ -93,6 +111,13 @@ export function KeyboardNoteTrainer() {
   const [faProgress, setFaProgress] = useState<FindAllProgress>(EMPTY_PROGRESS)
   const [faFound, setFaFound] = useState<readonly string[]>([])
   const [faWrong, setFaWrong] = useState<number | null>(null)
+
+  // Weakest-first picking parameters, or `undefined` when the toggle is off.
+  // Reads refs so the (stable) generator always sees the current stats/toggle.
+  const picking = useCallback(
+    () => (focusWeakRef.current ? { stats: statsRef.current, now: Date.now() } : undefined),
+    [],
+  )
 
   const clearPendingAdvance = useCallback(() => {
     if (timeoutRef.current !== null) {
@@ -137,7 +162,7 @@ export function KeyboardNoteTrainer() {
     if (settings.mode === 'findAll') {
       const session = new FindAllSession<FindAllQuestion, number>({
         generate: (previous, rng) =>
-          generateQuestion(contextRef.current, previous, rng) as FindAllQuestion,
+          generateQuestion(contextRef.current, previous, rng, picking()) as FindAllQuestion,
         targetsOf: findAllTargetKeys,
         keyOf: keyKey,
       })
@@ -152,7 +177,7 @@ export function KeyboardNoteTrainer() {
       setResult(null)
     } else {
       const session = new QuizSession<TrainerQuestion, TrainerAnswer>({
-        generate: (previous, rng) => generateQuestion(contextRef.current, previous, rng),
+        generate: (previous, rng) => generateQuestion(contextRef.current, previous, rng, picking()),
         check: checkAnswer,
         clock: () => performance.now(),
       })
@@ -184,6 +209,11 @@ export function KeyboardNoteTrainer() {
       const res = session.answer(answer)
       setResult(res)
       setStats(session.stats)
+      setNoteStats(
+        keyboardStatsStore.update((d) =>
+          recordOutcome(d, res.question.pc, res.correct, res.responseMs, Date.now()),
+        ),
+      )
 
       const engine = engineRef.current
       void engine.ensureRunning().then(() => engine.playNote(midiToPlay, 0.7))
@@ -218,6 +248,14 @@ export function KeyboardNoteTrainer() {
         }, WRONG_FLASH_MS)
       }
       if (res.justCompleted) {
+        const q = session.current
+        if (q) {
+          setNoteStats(
+            keyboardStatsStore.update((d) =>
+              recordFindAllRound(d, [q.pc], q.pc, res.progress.mistakes, Date.now()),
+            ),
+          )
+        }
         clearPendingAdvance()
         timeoutRef.current = window.setTimeout(advance, ADVANCE_MS_CORRECT)
       }
@@ -251,6 +289,11 @@ export function KeyboardNoteTrainer() {
   const answered = result !== null
   const findClickable = settings.mode === 'find' && !answered
   const findAllClickable = settings.mode === 'findAll' && !faProgress.complete
+
+  const resetStats = useCallback(() => {
+    keyboardStatsStore.clear()
+    setNoteStats(emptyNoteStats())
+  }, [])
 
   const setOctave = (which: 'fromOctave' | 'toOctave', value: number): void => {
     setSettings((s) => {
@@ -366,6 +409,20 @@ export function KeyboardNoteTrainer() {
             ))}
           </div>
         </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Focus</span>
+          <div className="mn-segmented" role="group">
+            <button
+              type="button"
+              className={`mn-segment${settings.focusWeak ? ' mn-segment-active' : ''}`}
+              aria-pressed={settings.focusWeak}
+              onClick={() => setSettings((s) => ({ ...s, focusWeak: !s.focusWeak }))}
+            >
+              Focus weak notes
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="fnt-prompt" role="status" aria-live="polite">
@@ -437,6 +494,8 @@ export function KeyboardNoteTrainer() {
           <span className="fnt-score-label">Best streak</span>
         </div>
       </div>
+
+      <NoteStatsPanel stats={noteStats} prefer={prefer} onReset={resetStats} />
     </div>
   )
 }
