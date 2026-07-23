@@ -1591,6 +1591,31 @@ a.tool-card:hover {
   color: var(--text-dim);
 }
 
+/* ---- Melodic echo ---- */
+
+.et-echo-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.et-echo-progress {
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.et-echo-progress strong {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+.et-echo-board {
+  margin: 0.25rem 0 0.75rem;
+}
+
 
 /* ---- Circle of Fifths ---- */
 
