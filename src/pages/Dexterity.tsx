@@ -89,6 +89,25 @@ import {
   getPermutationPattern,
   permutationId,
 } from '../lib/permutations.ts'
+import {
+  DEFAULT_STEP_DURATION,
+  type DrillConfig,
+  drillConfigLabel,
+  estimateRoutineSeconds,
+  expandDrillConfig,
+  MAX_STEP_LOOPS,
+  MAX_STEP_MINUTES,
+  MIN_STEP_LOOPS,
+  MIN_STEP_MINUTES,
+  moveStep,
+  normalizeRoutinesState,
+  removeStep,
+  type Routine,
+  type RoutineStep,
+  routinesStore,
+  type StepDuration,
+  stepIsComplete,
+} from '../lib/warmupRoutines.ts'
 
 /** Labels for the accent-every-N control (0 = the accent layer is off). */
 const ACCENT_LABELS: Record<number, string> = {
@@ -195,6 +214,27 @@ export function Dexterity() {
   const [running, setRunning] = useState(false)
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null)
   const [activeLoop, setActiveLoop] = useState(0)
+
+  // --- Warm-up routine builder + player -------------------------------------
+  // The working (unsaved) routine being built/played; saved routines live in
+  // the versioned `routinesStore`. The active routine step index is `null` when
+  // no routine is playing. Advancement is driven from the rAF indicator below.
+  const [savedState, setSavedState] = useState(() => normalizeRoutinesState(routinesStore.get()))
+  // Reopen with the last-played routine loaded into the builder, if any.
+  const lastUsedRoutine = savedState.routines.find((r) => r.id === savedState.lastUsedId)
+  const [routineSteps, setRoutineSteps] = useState<RoutineStep[]>(() =>
+    lastUsedRoutine ? [...lastUsedRoutine.steps] : [],
+  )
+  const [routineName, setRoutineName] = useState(() => lastUsedRoutine?.name ?? '')
+  const [routineIndex, setRoutineIndex] = useState<number | null>(null)
+  const [transitionLabel, setTransitionLabel] = useState<string | null>(null)
+
+  const routineStepsRef = useRef<RoutineStep[]>([])
+  const routineIndexRef = useRef<number | null>(null)
+  const stepStartStepRef = useRef<number | null>(null)
+  const stepStartTimeRef = useRef(0)
+  const bannerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const advanceRoutineRef = useRef<() => void>(() => {})
 
   const pattern = useMemo(() => getPermutationPattern(patternId) ?? getPattern(patternId), [patternId])
   const rhythm = useMemo(() => getRhythm(rhythmId), [rhythmId])
@@ -404,7 +444,9 @@ export function Dexterity() {
     }
   }, [])
 
-  // Drive the current-step indicator from the audio-accurate position.
+  // Drive the current-step indicator from the audio-accurate position, and —
+  // when a routine is playing — count off the active step's duration and
+  // advance to the next step once it is met (see `advanceRoutine`).
   const runIndicator = useCallback(() => {
     const scheduler = schedulerRef.current
     if (scheduler) {
@@ -414,6 +456,24 @@ export function Dexterity() {
         if (loc) {
           setActiveStepIndex((prev) => (prev === loc.stepIndex ? prev : loc.stepIndex))
           setActiveLoop((prev) => (prev === loc.loop ? prev : loc.loop))
+        }
+
+        const idx = routineIndexRef.current
+        if (idx !== null) {
+          const rstep = routineStepsRef.current[idx]
+          if (rstep) {
+            // Anchor the step's elapsed measure to the first heard grid step
+            // after it became active (config + timing refs are settled by now).
+            if (stepStartStepRef.current === null) {
+              stepStartStepRef.current = pos.step
+              stepStartTimeRef.current = engineRef.current.currentTime
+            }
+            const gridElapsed = pos.step - stepStartStepRef.current
+            const secondsElapsed = engineRef.current.currentTime - stepStartTimeRef.current
+            if (stepIsComplete(rstep, gridElapsed, timingRef.current.totalGridSteps, secondsElapsed)) {
+              advanceRoutineRef.current()
+            }
+          }
         }
       }
     }
@@ -452,18 +512,200 @@ export function Dexterity() {
     setRunning(false)
     setActiveStepIndex(null)
     setActiveLoop(0)
+    // Also tear down any routine that was playing.
+    routineIndexRef.current = null
+    stepStartStepRef.current = null
+    setRoutineIndex(null)
+    setTransitionLabel(null)
+    if (bannerTimeoutRef.current !== null) clearTimeout(bannerTimeoutRef.current)
   }, [])
 
   useEffect(
     () => () => {
       schedulerRef.current?.stop()
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      if (bannerTimeoutRef.current !== null) clearTimeout(bannerTimeoutRef.current)
     },
     [],
   )
 
+  // Apply a drill config to the page's React state (so the board/controls
+  // reflect the step being played) — used by the routine player on each advance.
+  const applyDrillConfig = useCallback((c: DrillConfig) => {
+    setMode(c.mode)
+    setPatternId(c.patternId)
+    setScaleRootPc(c.scaleRootPc)
+    setScaleId(c.scaleId)
+    setSequenceId(c.sequenceId)
+    setArpRootPc(c.arpRootPc)
+    setArpQualityId(c.arpQualityId)
+    setArpInversion(c.arpInversion)
+    setPosition(c.position)
+    setBpm(c.bpm)
+    setRhythmId(c.rhythmId)
+    setAccentEveryN(c.accentEveryN)
+    setDirection(c.direction)
+  }, [])
+
+  // Mirror a drill config straight onto the scheduler-callback refs, so the very
+  // next grid step plays the new step's exercise without waiting for the React
+  // re-render (which then rewrites these same refs to identical values).
+  const syncConfigRefs = useCallback((c: DrillConfig) => {
+    modeRef.current = c.mode
+    patternRef.current = getPermutationPattern(c.patternId) ?? getPattern(c.patternId)
+    scaleRootPcRef.current = c.scaleRootPc
+    scaleRef.current = getScale(c.scaleId)
+    sequenceIdRef.current = c.sequenceId
+    arpRootPcRef.current = c.arpRootPc
+    arpQualityRef.current = getArpeggioQuality(c.arpQualityId)
+    arpInversionRef.current = c.arpInversion
+    positionRef.current = c.position
+    rhythmRef.current = getRhythm(c.rhythmId)
+    accentNRef.current = c.accentEveryN
+    directionRef.current = c.direction
+    bpmRef.current = c.bpm
+    rangeRef.current = undefined
+  }, [])
+
+  // A distinct two-note rising chime (triangle, unlike the sawtooth exercise
+  // voice) marking a step transition, plus the "Next: …" banner.
+  const cueTransition = useCallback((label: string) => {
+    const engine = engineRef.current
+    const t = engine.currentTime
+    engine.playNote(76, 0.16, { when: t + 0.001, velocity: 0.9, type: 'triangle', detune: 0 })
+    engine.playNote(83, 0.24, { when: t + 0.11, velocity: 0.9, type: 'triangle', detune: 0 })
+    setTransitionLabel(label)
+    if (bannerTimeoutRef.current !== null) clearTimeout(bannerTimeoutRef.current)
+    bannerTimeoutRef.current = setTimeout(() => setTransitionLabel(null), 1800)
+  }, [])
+
+  // Advance the running routine to its next step, or stop when it is complete.
+  // Reads/writes the routine refs so the rAF loop can call it via a stable ref.
+  const advanceRoutine = useCallback(() => {
+    const idx = routineIndexRef.current
+    if (idx === null) return
+    const next = routineStepsRef.current[idx + 1]
+    if (!next) {
+      stop()
+      return
+    }
+    routineIndexRef.current = idx + 1
+    stepStartStepRef.current = null
+    setRoutineIndex(idx + 1)
+    applyDrillConfig(next.config)
+    syncConfigRefs(next.config)
+    schedulerRef.current?.setTempo(next.config.bpm)
+    cueTransition(drillConfigLabel(next.config))
+  }, [stop, applyDrillConfig, syncConfigRefs, cueTransition])
+  advanceRoutineRef.current = advanceRoutine
+
+  // Start playing a routine from step 0, driving the existing scheduler.
+  const startRoutine = useCallback(
+    async (steps: readonly RoutineStep[]) => {
+      if (steps.length === 0) return
+      const first = steps[0]!
+      setAutoAdvance(false)
+      routineStepsRef.current = [...steps]
+      routineIndexRef.current = 0
+      stepStartStepRef.current = null
+      setRoutineIndex(0)
+      applyDrillConfig(first.config)
+      syncConfigRefs(first.config)
+      await start()
+      cueTransition(drillConfigLabel(first.config))
+    },
+    [start, applyDrillConfig, syncConfigRefs, cueTransition],
+  )
+
+  const stopRoutine = useCallback(() => stop(), [stop])
+
+  // --- Routine builder actions (edit the working step list) ------------------
+  const currentDrillConfig = useCallback(
+    (): DrillConfig => ({
+      mode,
+      patternId,
+      scaleRootPc,
+      scaleId,
+      sequenceId,
+      arpRootPc,
+      arpQualityId,
+      arpInversion,
+      position,
+      bpm,
+      rhythmId,
+      accentEveryN,
+      direction,
+    }),
+    [
+      mode,
+      patternId,
+      scaleRootPc,
+      scaleId,
+      sequenceId,
+      arpRootPc,
+      arpQualityId,
+      arpInversion,
+      position,
+      bpm,
+      rhythmId,
+      accentEveryN,
+      direction,
+    ],
+  )
+
+  const addCurrentDrill = useCallback(() => {
+    setRoutineSteps((s) => [...s, { config: currentDrillConfig(), duration: DEFAULT_STEP_DURATION }])
+  }, [currentDrillConfig])
+
+  const setStepDuration = useCallback((index: number, duration: StepDuration) => {
+    setRoutineSteps((s) => s.map((step, i) => (i === index ? { ...step, duration } : step)))
+  }, [])
+
+  const persistSaved = useCallback((next: ReturnType<typeof normalizeRoutinesState>) => {
+    setSavedState(next)
+    routinesStore.set(next)
+  }, [])
+
+  const saveRoutine = useCallback(() => {
+    if (routineSteps.length === 0) return
+    const id = `r-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`
+    const routine: Routine = { id, name: routineName.trim() || 'Routine', steps: routineSteps }
+    persistSaved(
+      normalizeRoutinesState({ routines: [...savedState.routines, routine], lastUsedId: id }),
+    )
+  }, [routineSteps, routineName, savedState, persistSaved])
+
+  const loadRoutine = useCallback(
+    (routine: Routine) => {
+      setRoutineSteps([...routine.steps])
+      setRoutineName(routine.name)
+      persistSaved({ ...savedState, lastUsedId: routine.id })
+    },
+    [savedState, persistSaved],
+  )
+
+  const deleteRoutine = useCallback(
+    (id: string) => {
+      persistSaved(
+        normalizeRoutinesState({
+          routines: savedState.routines.filter((r) => r.id !== id),
+          lastUsedId: savedState.lastUsedId,
+        }),
+      )
+    },
+    [savedState, persistSaved],
+  )
+
   const changeBpm = useCallback((next: number) => setBpm(clampBpm(next)), [])
   const changePosition = useCallback((next: number) => setPosition(clampFret(next)), [])
+
+  // Estimated total time of the working routine (minutes-steps exact; loops-
+  // steps derived from each exercise's note count at the current tuning).
+  const routineTotalSeconds = useMemo(
+    () =>
+      estimateRoutineSeconds({ id: '', name: '', steps: routineSteps }, (c) => expandDrillConfig(c, tuning).length),
+    [routineSteps, tuning],
+  )
 
   // Board fret range: pad one fret either side of the notes on show.
   const frets = displaySteps.map((s) => s.fret)
@@ -769,7 +1011,18 @@ export function Dexterity() {
             >
               {running ? 'Stop' : 'Start'}
             </button>
+            {routineIndex !== null && (
+              <span className="dx-routine-progress" aria-live="polite">
+                Routine · step {routineIndex + 1}/{routineStepsRef.current.length}
+              </span>
+            )}
           </div>
+
+          {transitionLabel !== null && (
+            <div className="dx-routine-banner" role="status">
+              Next: {transitionLabel}
+            </div>
+          )}
         </div>
       </div>
 
@@ -951,8 +1204,174 @@ export function Dexterity() {
           </div>
         </details>
       </div>
+
+      <details className="dx-more dx-routine">
+        <summary className="dx-more-summary">
+          Warm-up routine{routineSteps.length > 0 ? ` · ${routineSteps.length} steps · ${formatDuration(routineTotalSeconds)}` : ''}
+        </summary>
+
+        <div className="dx-routine-body">
+          <div className="dx-routine-toolbar">
+            <button type="button" className="dx-routine-add" onClick={addCurrentDrill}>
+              + Add current drill
+            </button>
+            <span className="dx-routine-total">
+              {routineSteps.length === 0
+                ? 'No steps yet'
+                : `Total ~${formatDuration(routineTotalSeconds)}`}
+            </span>
+          </div>
+
+          {routineSteps.length === 0 ? (
+            <p className="dx-routine-empty">
+              Set up a drill above, then “Add current drill” to build a timed routine. Each step runs
+              for a number of minutes or loops, then auto-advances to the next.
+            </p>
+          ) : (
+            <ol className="dx-routine-list">
+              {routineSteps.map((rstep, i) => {
+                const isMinutes = rstep.duration.kind === 'minutes'
+                const durValue = isMinutes ? rstep.duration.minutes : rstep.duration.loops
+                const active = routineIndex === i
+                return (
+                  <li key={i} className={`dx-routine-step${active ? ' dx-routine-step-active' : ''}`}>
+                    <span className="dx-routine-step-order">{i + 1}</span>
+                    <span className="dx-routine-step-label">{drillConfigLabel(rstep.config)}</span>
+                    <div className="dx-routine-step-dur">
+                      <div className="dx-segmented" role="group" aria-label={`Step ${i + 1} duration mode`}>
+                        <button
+                          type="button"
+                          className={`dx-segment${isMinutes ? ' dx-segment-active' : ''}`}
+                          aria-pressed={isMinutes}
+                          onClick={() => setStepDuration(i, { kind: 'minutes', minutes: isMinutes ? durValue : 2 })}
+                        >
+                          min
+                        </button>
+                        <button
+                          type="button"
+                          className={`dx-segment${!isMinutes ? ' dx-segment-active' : ''}`}
+                          aria-pressed={!isMinutes}
+                          onClick={() => setStepDuration(i, { kind: 'loops', loops: isMinutes ? 4 : durValue })}
+                        >
+                          loops
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        className="dx-routine-dur-input"
+                        min={isMinutes ? MIN_STEP_MINUTES : MIN_STEP_LOOPS}
+                        max={isMinutes ? MAX_STEP_MINUTES : MAX_STEP_LOOPS}
+                        value={durValue}
+                        aria-label={`Step ${i + 1} ${isMinutes ? 'minutes' : 'loops'}`}
+                        onChange={(e) => {
+                          const raw = Number(e.target.value)
+                          const lo = isMinutes ? MIN_STEP_MINUTES : MIN_STEP_LOOPS
+                          const hi = isMinutes ? MAX_STEP_MINUTES : MAX_STEP_LOOPS
+                          const n = Number.isFinite(raw) ? Math.min(hi, Math.max(lo, Math.round(raw))) : lo
+                          setStepDuration(i, isMinutes ? { kind: 'minutes', minutes: n } : { kind: 'loops', loops: n })
+                        }}
+                      />
+                    </div>
+                    <div className="dx-routine-step-btns">
+                      <button
+                        type="button"
+                        className="dx-routine-btn"
+                        aria-label={`Move step ${i + 1} up`}
+                        disabled={i === 0}
+                        onClick={() => setRoutineSteps((s) => moveStep(s, i, -1))}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="dx-routine-btn"
+                        aria-label={`Move step ${i + 1} down`}
+                        disabled={i === routineSteps.length - 1}
+                        onClick={() => setRoutineSteps((s) => moveStep(s, i, 1))}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="dx-routine-btn dx-routine-btn-remove"
+                        aria-label={`Remove step ${i + 1}`}
+                        onClick={() => setRoutineSteps((s) => removeStep(s, i))}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+
+          {routineSteps.length > 0 && (
+            <div className="dx-routine-actions">
+              <button
+                type="button"
+                className={`dx-start${routineIndex !== null ? ' dx-start-active' : ''}`}
+                onClick={() => (routineIndex !== null ? stopRoutine() : void startRoutine(routineSteps))}
+              >
+                {routineIndex !== null ? 'Stop routine' : 'Play routine'}
+              </button>
+              <input
+                type="text"
+                className="dx-routine-name"
+                placeholder="Routine name"
+                value={routineName}
+                aria-label="Routine name"
+                onChange={(e) => setRoutineName(e.target.value)}
+              />
+              <button type="button" className="dx-routine-btn dx-routine-save" onClick={saveRoutine}>
+                Save
+              </button>
+            </div>
+          )}
+
+          {savedState.routines.length > 0 && (
+            <div className="dx-saved">
+              <span className="tool-control-label">Saved routines</span>
+              <ul className="dx-saved-list">
+                {savedState.routines.map((r) => (
+                  <li key={r.id} className="dx-saved-item">
+                    <span className="dx-saved-name">{r.name}</span>
+                    <span className="dx-saved-meta">{r.steps.length} steps</span>
+                    <button type="button" className="dx-routine-btn" onClick={() => loadRoutine(r)}>
+                      Load
+                    </button>
+                    <button
+                      type="button"
+                      className="dx-routine-btn"
+                      onClick={() => void startRoutine(r.steps)}
+                    >
+                      Play
+                    </button>
+                    <button
+                      type="button"
+                      className="dx-routine-btn dx-routine-btn-remove"
+                      aria-label={`Delete routine ${r.name}`}
+                      onClick={() => deleteRoutine(r.id)}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </details>
     </div>
   )
+}
+
+/** Format a duration in seconds as `m:ss` (e.g. 150 → "2:30"). */
+function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 /**
