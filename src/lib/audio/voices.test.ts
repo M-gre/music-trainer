@@ -8,8 +8,10 @@ import {
   amplitudePercentile,
   dcOffset,
   dominantFrequency,
+  energyFractionAbove,
   fadeInAttack,
   fadeOutTail,
+  goertzelPower,
   isVoiceName,
   normalizePeak,
   normalizePercentile,
@@ -17,6 +19,7 @@ import {
   removeDc,
   rms,
   softClip,
+  spectralCentroid,
 } from './voices.ts'
 
 describe('voice identity', () => {
@@ -112,6 +115,48 @@ describe('signal helpers', () => {
     const buf = new Float32Array(sr / 4)
     for (let i = 0; i < buf.length; i += 1) buf[i] = Math.sin((2 * Math.PI * f * i) / sr)
     expect(dominantFrequency(buf, sr, { minHz: 80, maxHz: 800 })).toBeCloseTo(f, -1)
+  })
+
+  it('goertzelPower peaks at a tone frequency and is small away from it', () => {
+    const sr = 44100
+    const f = 440
+    const buf = new Float32Array(4096)
+    for (let i = 0; i < buf.length; i += 1) buf[i] = Math.sin((2 * Math.PI * f * i) / sr)
+    const onTone = goertzelPower(buf, sr, f)
+    const offTone = goertzelPower(buf, sr, f * 3)
+    expect(onTone).toBeGreaterThan(offTone * 100)
+  })
+
+  it('spectralCentroid sits near the frequency of a pure tone', () => {
+    const sr = 44100
+    const f = 500
+    const buf = new Float32Array(8192)
+    for (let i = 0; i < buf.length; i += 1) buf[i] = Math.sin((2 * Math.PI * f * i) / sr)
+    const centroid = spectralCentroid(buf, sr, { maxHz: 8000 })
+    expect(centroid).toBeGreaterThan(f * 0.85)
+    expect(centroid).toBeLessThan(f * 1.15)
+  })
+
+  it('spectralCentroid ranks a bright tone above a dark one', () => {
+    const sr = 44100
+    const make = (f: number): Float32Array => {
+      const buf = new Float32Array(8192)
+      for (let i = 0; i < buf.length; i += 1) buf[i] = Math.sin((2 * Math.PI * f * i) / sr)
+      return buf
+    }
+    expect(spectralCentroid(make(3000), sr)).toBeGreaterThan(spectralCentroid(make(300), sr))
+  })
+
+  it('energyFractionAbove measures the share of power above a cutoff', () => {
+    const sr = 44100
+    // A single 200 Hz tone: essentially no power above 2 kHz.
+    const low = new Float32Array(8192)
+    for (let i = 0; i < low.length; i += 1) low[i] = Math.sin((2 * Math.PI * 200 * i) / sr)
+    expect(energyFractionAbove(low, sr, 2000)).toBeLessThan(0.05)
+    // A single 6 kHz tone: essentially all power above 2 kHz.
+    const high = new Float32Array(8192)
+    for (let i = 0; i < high.length; i += 1) high[i] = Math.sin((2 * Math.PI * 6000 * i) / sr)
+    expect(energyFractionAbove(high, sr, 2000)).toBeGreaterThan(0.8)
   })
 })
 

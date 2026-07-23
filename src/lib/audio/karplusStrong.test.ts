@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { renderKarplusStrong, pluckOptionsForMidi } from './karplusStrong.ts'
-import { dcOffset, dominantFrequency, peakAmplitude, rms } from './voices.ts'
+import {
+  dcOffset,
+  dominantFrequency,
+  energyFractionAbove,
+  goertzelPower,
+  peakAmplitude,
+  rms,
+  spectralCentroid,
+} from './voices.ts'
 
 const SR = 44100
+const f0 = (midi: number): number => 440 * Math.pow(2, (midi - 69) / 12)
 
 function render(midi: number, seconds = 0.8): Float32Array {
   return renderKarplusStrong(midi, seconds, SR, pluckOptionsForMidi(midi))
@@ -35,18 +44,23 @@ describe('renderKarplusStrong', () => {
     expect(Math.abs(out[out.length - 1] ?? 1)).toBeLessThan(0.02)
   })
 
+  it('rounds the attack so the first sample is not a hard click', () => {
+    const out = render(40)
+    // The raised-cosine attack fade keeps the very first sample tiny.
+    expect(Math.abs(out[0] ?? 1)).toBeLessThan(0.05)
+  })
+
   it('has a dominant period matching the fundamental across the range', () => {
     for (const midi of [28, 40, 52, 64, 76]) {
-      const f0 = 440 * Math.pow(2, (midi - 69) / 12)
       const out = render(midi, 0.5)
       const detected = dominantFrequency(out, SR, {
-        minHz: f0 * 0.5,
-        maxHz: f0 * 2,
+        minHz: f0(midi) * 0.5,
+        maxHz: f0(midi) * 2,
         windowSize: 16384,
       })
       // Within ~3% (≈ half a semitone) — accurate tuning from fractional delay.
-      expect(detected).toBeGreaterThan(f0 * 0.97)
-      expect(detected).toBeLessThan(f0 * 1.03)
+      expect(detected).toBeGreaterThan(f0(midi) * 0.97)
+      expect(detected).toBeLessThan(f0(midi) * 1.03)
     }
   })
 
@@ -68,10 +82,75 @@ describe('renderKarplusStrong', () => {
     expect(roughness(bright)).toBeGreaterThan(roughness(dark))
   })
 
-  it('pluckOptionsForMidi darkens and shortens the bass relative to guitar range', () => {
+  it('pluckOptionsForMidi makes the bass darker and longer-ringing than the guitar range', () => {
     const bass = pluckOptionsForMidi(31) // low B on a 5-string
     const guitar = pluckOptionsForMidi(64) // E4
     expect(bass.brightness).toBeLessThan(guitar.brightness)
-    expect(bass.decaySeconds).toBeLessThan(guitar.decaySeconds)
+    // Warm, sustained bass: rings LONGER than the guitar register.
+    expect(bass.decaySeconds).toBeGreaterThan(guitar.decaySeconds)
+    // More fundamental reinforcement + a more central pluck low down.
+    expect(bass.bodyMix ?? 0).toBeGreaterThan(guitar.bodyMix ?? 0)
+    expect(bass.pickPosition ?? 0).toBeGreaterThan(guitar.pickPosition ?? 0)
+  })
+})
+
+// --- Quantitative timbre targets (the "not clangy" contract) ----------------
+// A clangy/metallic pluck has an abnormally high spectral centroid and audible
+// energy in the high treble that never dies. These assert the opposite.
+
+describe('renderKarplusStrong timbre (anti-clang) targets', () => {
+  const BASS = [28, 31, 33, 36, 40, 43]
+  const GUITAR = [45, 52, 55, 59, 64, 71, 76]
+
+  it('keeps the low bass attack dark (spectral centroid of the first 100 ms)', () => {
+    // Low open-bass notes are warm and round.
+    for (const midi of [28, 40]) {
+      const first100 = render(midi).subarray(0, Math.round(0.1 * SR))
+      expect(spectralCentroid(first100, SR, { maxHz: 12000 })).toBeLessThan(900)
+    }
+    // Nothing in the bass register gets remotely bright/metallic in the attack.
+    for (const midi of BASS) {
+      const first100 = render(midi).subarray(0, Math.round(0.1 * SR))
+      expect(spectralCentroid(first100, SR, { maxHz: 12000 })).toBeLessThan(1300)
+    }
+  })
+
+  it('keeps the guitar attack below a brighter (but non-clangy) ceiling', () => {
+    for (const midi of GUITAR) {
+      const first100 = render(midi).subarray(0, Math.round(0.1 * SR))
+      expect(spectralCentroid(first100, SR, { maxHz: 12000 })).toBeLessThan(1800)
+    }
+  })
+
+  it('bass notes have almost no energy above 5 kHz (no high-frequency zing)', () => {
+    for (const midi of BASS) {
+      const early = render(midi).subarray(0, Math.round(0.3 * SR))
+      expect(energyFractionAbove(early, SR, 5000)).toBeLessThan(0.01) // < 1%
+    }
+  })
+
+  it('the fundamental dominates any single overtone after 300 ms', () => {
+    for (const midi of [...BASS, ...GUITAR]) {
+      const buf = render(midi, 1.0)
+      const win = buf.subarray(Math.round(0.3 * SR), Math.round(0.3 * SR) + 8192)
+      const fund = goertzelPower(win, SR, f0(midi))
+      let strongestOvertone = 0
+      for (let k = 2; k <= 12; k += 1) {
+        const p = goertzelPower(win, SR, f0(midi) * k)
+        if (p > strongestOvertone) strongestOvertone = p
+      }
+      expect(fund).toBeGreaterThan(strongestOvertone * 1.3)
+    }
+  })
+
+  it('decays smoothly (each quarter quieter than the previous — no re-ringing)', () => {
+    for (const midi of [28, 36, 40, 52, 64]) {
+      const buf = render(midi, 1.0)
+      const q = Math.floor(buf.length / 4)
+      const quarters = [0, 1, 2, 3].map((i) => rms(buf.subarray(i * q, (i + 1) * q)))
+      for (let i = 1; i < 4; i += 1) {
+        expect(quarters[i]!).toBeLessThan(quarters[i - 1]!)
+      }
+    }
   })
 })

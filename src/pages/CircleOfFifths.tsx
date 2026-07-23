@@ -104,11 +104,12 @@ export function CircleOfFifths() {
   const [fretboardOpen, setFretboardOpen] = useState(defaultInstrumentViewOpen)
   const [keyboardOpen, setKeyboardOpen] = useState(defaultInstrumentViewOpen)
 
-  // A bass-primary theory hub (extended as a fretboard learning tool): scale and
-  // triad playback use the fretted (pluck) voice, matching the instrument the
-  // user is practising. Asserted on mount since the voice context is app-global.
+  // A harmony/theory hub: scale and chord playback use the piano (keyboard)
+  // voice, which reads chords more clearly than the pluck. (The Diatonic Chords
+  // view stays on the fretted voice — its purpose is bass-line chord tones.)
+  // Asserted on mount since the voice context is app-global.
   useEffect(() => {
-    engineRef.current.setVoiceContext('fretted')
+    engineRef.current.setVoiceContext('keyboard')
   }, [])
 
   const { selectedIndex, scaleView } = settings

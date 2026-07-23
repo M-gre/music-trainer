@@ -118,8 +118,13 @@ const VOLUME_RAMP = 0.02
 
 /** Click-free fade-in for a rendered-buffer voice (pluck/piano), seconds. */
 const BUFFER_ATTACK = 0.0015
-/** Fade-out at gate end so a truncated buffer note does not click, seconds. */
-const BUFFER_RELEASE = 0.06
+/**
+ * Fade-out at gate end so a truncated buffer note does not click, seconds. The
+ * pluck/piano buffers carry a long natural decay (2–3.5 s); when a note is gated
+ * shorter than that, this release ramps the tail down smoothly instead of the
+ * source stopping mid-ring — a hard stop reads as a click/"clang".
+ */
+const BUFFER_RELEASE = 0.09
 
 /** Shortest fade-in of a click so a hard-step attack transient never clicks. */
 const CLICK_ATTACK = 0.0008
