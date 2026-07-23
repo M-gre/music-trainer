@@ -5,6 +5,7 @@ import { Metronome } from './pages/Metronome.tsx'
 import { FretboardNoteTrainer } from './pages/FretboardNoteTrainer.tsx'
 import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
 import { NoteReading } from './pages/NoteReading.tsx'
+import { ChordExplorer } from './pages/ChordExplorer.tsx'
 
 export interface Tool {
   route: string
@@ -39,6 +40,7 @@ export const TOOLS: Tool[] = [
     title: 'Chord Explorer',
     description: 'Chord shapes and voicings on fretboard and keyboard.',
     tags: ['bass', 'guitar', 'piano'],
+    page: () => <ChordExplorer />,
   },
   {
     route: '/scales',

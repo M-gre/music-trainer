@@ -1056,3 +1056,116 @@ a.tool-card:hover {
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+/* ---- Chord Explorer ---- */
+
+.ce-quality-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ce-quality-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ce-quality-subgroup-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.ce-chord-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+}
+
+.ce-symbol-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ce-symbol {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 3.5rem;
+}
+
+.ce-tones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ce-tone-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 2.75rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ce-tone-chip-root {
+  border-color: var(--accent-dim);
+}
+
+.ce-tone-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.ce-tone-interval {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.ce-playback {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.ce-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ce-view-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+@media (max-width: 480px) {
+  .ce-symbol {
+    font-size: 1.5rem;
+    min-width: 2.5rem;
+  }
+
+  .ce-chord-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ce-playback {
+    flex-direction: column;
+  }
+}
