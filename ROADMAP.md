@@ -82,4 +82,4 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [x] Settings page: default instrument/tuning (bass & guitar, all string counts), left-handed fretboard flip, sharps/flats preference, volume
 - [ ] Apply sharps/flats preference in remaining tools (currently only default Fretboard/Keyboard note-name labels honor it; tools that pass explicit spelled labels — scales, chords, note reading, etc. — still ignore the global preference)
 - [ ] Front-page rework: the home grid has grown to 14 uniform tiles — group tools into sections (e.g. Learn / Train / Play / Reference), surface the practice dashboard's streak + suggested routine at the top, show recently-used tools first within their group, give Settings a distinct low-key placement (e.g. header gear icon), keep it scannable on a phone (390px)
-- [ ] Custom tuning editor: define and save arbitrary tunings (name + per-string pitch) alongside the built-ins
+- [x] Custom tuning editor: define and save arbitrary tunings (name + per-string pitch) alongside the built-ins
