@@ -50,7 +50,7 @@ import {
   playbackRootMidi,
 } from '../lib/scaleExplorer.ts'
 import { diatonicTriads } from '../lib/theory/chords.ts'
-import { getScale, prefersFlats, spellScale } from '../lib/theory/index.ts'
+import { getScale, prefersFlats, spellScale, type Letter } from '../lib/theory/index.ts'
 import { pcToName } from '../lib/theory/notes.ts'
 
 const MAJOR_INTERVALS = getScale('major').intervals
@@ -124,25 +124,27 @@ export function CircleOfFifths() {
 
   const selected = CIRCLE_KEYS[selectedIndex] ?? CIRCLE_KEYS[0]!
 
-  const scaleNames = useMemo(
-    () => spellScale(selected.majorPc, MAJOR_INTERVALS, selected.rootLetter),
-    [selected],
-  )
   const triads = useMemo(() => diatonicTriads(selected.majorPc), [selected])
   const flats = prefersFlats(selected.majorPc)
 
-  const scaleMidis = useMemo(
-    () => MAJOR_INTERVALS.map((i) => PLAYBACK_BASE_MIDI + selected.majorPc + i),
-    [selected],
-  )
-
-  // Instrument views: highlight either the key's major scale or its relative
-  // natural minor, reusing the Scales explorer's marker builders so the
-  // fretboard/keyboard shapes stay in sync with that tool.
+  // The scale card (label, note chips, playback) and the instrument views all
+  // follow the major / relative-minor toggle: in minor view the scale starts
+  // on the relative minor's tonic, spelled with the shared key signature.
   const activeRootPc = scaleView === 'major' ? selected.majorPc : selected.minorPc
   const activeIntervals = scaleView === 'major' ? MAJOR_INTERVALS : MINOR_INTERVALS
   const activeRootName = scaleView === 'major' ? selected.majorName : selected.minorName
+  const activeRootLetter = scaleView === 'major' ? selected.rootLetter : (selected.minorName[0] as Letter)
   const activePrefer = keySpellingPrefer(selected)
+
+  const scaleNames = useMemo(
+    () => spellScale(activeRootPc, activeIntervals, activeRootLetter),
+    [activeRootPc, activeIntervals, activeRootLetter],
+  )
+
+  const scaleMidis = useMemo(
+    () => activeIntervals.map((i) => PLAYBACK_BASE_MIDI + activeRootPc + i),
+    [activeIntervals, activeRootPc],
+  )
 
   const fretMarkers = useMemo(
     () => buildFretboardMarkers(tuning, 0, 12, activeRootPc, activeIntervals, { display: 'names', prefer: activePrefer }),
@@ -296,24 +298,7 @@ export function CircleOfFifths() {
 
         <div className="cf-detail-section">
           <div className="cf-detail-row">
-            <span className="tool-control-label">Major scale</span>
-            <button type="button" className="cf-play-button" disabled={busy} onClick={() => void playScale()}>
-              Play scale
-            </button>
-          </div>
-          <div className="cf-scale-chips">
-            {scaleNames.map((name, i) => (
-              <span key={i} className={`cf-note-chip${i === 0 ? ' cf-note-chip-root' : ''}`}>
-                {name}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div className="cf-detail-section">
-          <div className="cf-detail-row">
-            <span className="tool-control-label">Instrument views</span>
-            <div className="se-segmented" role="group" aria-label="Scale shown on the fretboard and keyboard">
+            <div className="se-segmented" role="group" aria-label="Show the major scale or its relative minor">
               <button
                 type="button"
                 className={`se-segment${scaleView === 'major' ? ' se-segment-active' : ''}`}
@@ -331,6 +316,31 @@ export function CircleOfFifths() {
                 Relative minor
               </button>
             </div>
+            <button
+              type="button"
+              className="cf-play-button"
+              disabled={busy}
+              aria-label={`Play the ${activeRootName} ${scaleView} scale`}
+              onClick={() => void playScale()}
+            >
+              Play scale
+            </button>
+          </div>
+          <span className="tool-control-label">
+            {activeRootName} {scaleView === 'major' ? 'major' : 'minor'} scale
+          </span>
+          <div className="cf-scale-chips">
+            {scaleNames.map((name, i) => (
+              <span key={i} className={`cf-note-chip${i === 0 ? ' cf-note-chip-root' : ''}`}>
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="cf-detail-section">
+          <div className="cf-detail-row">
+            <span className="tool-control-label">Instrument views · {activeRootName} {scaleView === 'major' ? 'major' : 'minor'}</span>
           </div>
 
           <details
