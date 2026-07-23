@@ -12,7 +12,7 @@
  * mount, matching the Metronome/Circle of Fifths pattern).
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Fretboard } from '../components/Fretboard.tsx'
 import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
 import { Keyboard, type KeyboardMarker } from '../components/Keyboard.tsx'
@@ -59,6 +59,13 @@ export function ChordExplorer() {
   )
   const [labelMode, setLabelMode] = useState<ChordLabelMode>('interval')
   const [busy, setBusy] = useState(false)
+
+  // "Play chord" / "Play arpeggio" sound the concrete keyboard voicing, so the
+  // explorer voices playback on the keyboard (piano) tone (shared with the
+  // Scales explorer).
+  useEffect(() => {
+    engineRef.current.setVoiceContext('keyboard')
+  }, [])
 
   const { settings: globalSettings } = useGlobalSettings()
 

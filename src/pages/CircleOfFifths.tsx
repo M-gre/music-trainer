@@ -22,7 +22,7 @@
  * and collapsed on narrow ones.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CIRCLE_KEYS,
   ringSegmentPath,
@@ -103,6 +103,13 @@ export function CircleOfFifths() {
   const [busy, setBusy] = useState(false)
   const [fretboardOpen, setFretboardOpen] = useState(defaultInstrumentViewOpen)
   const [keyboardOpen, setKeyboardOpen] = useState(defaultInstrumentViewOpen)
+
+  // A bass-primary theory hub (extended as a fretboard learning tool): scale and
+  // triad playback use the fretted (pluck) voice, matching the instrument the
+  // user is practising. Asserted on mount since the voice context is app-global.
+  useEffect(() => {
+    engineRef.current.setVoiceContext('fretted')
+  }, [])
 
   const { selectedIndex, scaleView } = settings
 

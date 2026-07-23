@@ -6,6 +6,7 @@ import {
   clampBarsPerChord,
   compChordDuration,
   compTriggersAt,
+  compVoice,
   CUSTOM_PROGRESSION_ID,
   DEFAULT_ACCOMPANIMENT_SETTINGS,
   keyOptions,
@@ -164,6 +165,17 @@ describe('compChordDuration', () => {
 
   it('keeps stabs short', () => {
     expect(compChordDuration('stabs', 4, 120)).toBeCloseTo(0.3)
+  })
+})
+
+describe('compVoice', () => {
+  it('pins the classic synth for both styles (its type/ADSR only apply there)', () => {
+    expect(compVoice('pad').voice).toBe('classic')
+    expect(compVoice('stabs').voice).toBe('classic')
+  })
+
+  it('gives the pad a long sustain and the stab a short one', () => {
+    expect(compVoice('pad').sustain).toBeGreaterThan(compVoice('stabs').sustain)
   })
 })
 

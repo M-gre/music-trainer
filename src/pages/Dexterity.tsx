@@ -259,6 +259,14 @@ export function Dexterity() {
   const [pianoHand, setPianoHand] = useState<Hand>(settings.pianoHand)
   const [pianoOctaves, setPianoOctaves] = useState<ScaleOctaves>(settings.pianoOctaves)
 
+  // Exercise notes take the voice of the instrument being drilled: the piano
+  // (keyboard) voice in piano mode, the fretted (pluck) voice otherwise. Driven
+  // by the mode toggle (not per note), so the stable playback callback below can
+  // keep sounding notes with `engine.playNote` and no explicit voice.
+  useEffect(() => {
+    engineRef.current.setVoiceContext(pianoMode ? 'keyboard' : 'fretted')
+  }, [pianoMode])
+
   const [running, setRunning] = useState(false)
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null)
   const [activeLoop, setActiveLoop] = useState(0)
@@ -696,13 +704,15 @@ export function Dexterity() {
     rangeRef.current = undefined
   }, [])
 
-  // A distinct two-note rising chime (triangle, unlike the sawtooth exercise
-  // voice) marking a step transition, plus the "Next: …" banner.
+  // A distinct two-note rising chime marking a step transition, plus the
+  // "Next: …" banner. Pinned to the `classic` voice so its triangle waveform is
+  // honored and it stays distinct from the exercise voice (pluck/piano) — the
+  // buffer voices ignore the `type` field.
   const cueTransition = useCallback((label: string) => {
     const engine = engineRef.current
     const t = engine.currentTime
-    engine.playNote(76, 0.16, { when: t + 0.001, velocity: 0.9, type: 'triangle', detune: 0 })
-    engine.playNote(83, 0.24, { when: t + 0.11, velocity: 0.9, type: 'triangle', detune: 0 })
+    engine.playNote(76, 0.16, { when: t + 0.001, velocity: 0.9, voice: 'classic', type: 'triangle', detune: 0 })
+    engine.playNote(83, 0.24, { when: t + 0.11, velocity: 0.9, voice: 'classic', type: 'triangle', detune: 0 })
     setTransitionLabel(label)
     if (bannerTimeoutRef.current !== null) clearTimeout(bannerTimeoutRef.current)
     bannerTimeoutRef.current = setTimeout(() => setTransitionLabel(null), 1800)

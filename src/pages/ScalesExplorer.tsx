@@ -12,7 +12,7 @@
  * triggers the browser's autoplay block.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Fretboard } from '../components/Fretboard.tsx'
 import { Keyboard } from '../components/Keyboard.tsx'
 import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
@@ -69,6 +69,13 @@ export function ScalesExplorer() {
     normalizeScaleExplorerSettings(scaleExplorerSettingsStore.get()),
   )
   const [busy, setBusy] = useState(false)
+
+  // Explorer playback (the ascending/descending scale) is voiced on the
+  // keyboard (piano) tone: the scale is a harmony/theory reference shown on both
+  // instruments, and the explorer family (Scales + Chord) shares this voice.
+  useEffect(() => {
+    engineRef.current.setVoiceContext('keyboard')
+  }, [])
 
   const update = useCallback((patch: Partial<typeof settings>) => {
     setSettings((prev) => {
