@@ -1026,6 +1026,7 @@ a.tool-card:hover {
 
 .et-transport {
   display: flex;
+  gap: 0.6rem;
 }
 
 .et-play {
@@ -1048,6 +1049,30 @@ a.tool-card:hover {
 
 .et-play:active {
   background: var(--accent-dim);
+}
+
+/* Secondary transport action (e.g. "play as arpeggio"): less prominent than
+   the primary play button, shares the same row and touch-target sizing. */
+.et-play-secondary {
+  flex: 1 1 0;
+  min-height: 3.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.et-play-secondary:hover {
+  border-color: var(--accent-dim);
+}
+
+.et-play-secondary:active {
+  background: var(--bg-hover);
 }
 
 .et-answers {
