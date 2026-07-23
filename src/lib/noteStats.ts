@@ -218,6 +218,11 @@ export function pickWeighted<T>(
  * first means a class with many candidate items (e.g. many board positions of
  * the same note) isn't over-weighted just for having more positions.
  *
+ * An optional `boost(pc)` multiplier scales each class's weight — the seam the
+ * spaced-repetition scheduler uses to fold its due-ness signal into the
+ * weakest-first draw (see `spacedRepetition.srsWeight`). It defaults to `1`
+ * (no effect), keeping the plain weakest-first behaviour unchanged.
+ *
  * Pure given `rng`; throws on an empty list.
  */
 export function pickWeightedByPc<T>(
@@ -226,6 +231,7 @@ export function pickWeightedByPc<T>(
   stats: NoteStatsData,
   rng: Rng,
   now: number,
+  boost?: (pc: PitchClass) => number,
 ): T {
   if (items.length === 0) throw new Error('pickWeightedByPc: empty list')
   const byPc = new Map<PitchClass, T[]>()
@@ -236,7 +242,11 @@ export function pickWeightedByPc<T>(
     else byPc.set(pc, [item])
   }
   const pcs = [...byPc.keys()]
-  const chosenPc = pickWeighted(pcs, (pc) => noteWeight(stats[pc], now), rng)
+  const chosenPc = pickWeighted(
+    pcs,
+    (pc) => noteWeight(stats[pc], now) * (boost ? boost(pc) : 1),
+    rng,
+  )
   const group = byPc.get(chosenPc)!
   const index = Math.min(group.length - 1, Math.floor(rng() * group.length))
   return group[index]!

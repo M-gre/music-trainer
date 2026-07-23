@@ -16,6 +16,7 @@
 import { midiToPc, type PitchClass } from './theory/notes.ts'
 import { pickAvoiding, type Rng } from './quiz.ts'
 import { pickWeightedByPc, type NoteStatsData } from './noteStats.ts'
+import { createSrsStore, srsWeight, type SrsData } from './spacedRepetition.ts'
 import { Store, type StorageBackend } from './storage.ts'
 
 export type QuizMode = 'find' | 'name' | 'findAll'
@@ -133,11 +134,23 @@ function sameQuestion(a: TrainerQuestion, b: TrainerQuestion): boolean {
  * Optional weakest-first picking: when supplied, `generateQuestion` biases
  * toward the pitch classes the player is weakest on (see `noteStats.ts`)
  * instead of drawing uniformly.
+ *
+ * When `srs` is also supplied, the spaced-repetition scheduler's due-ness
+ * multiplier is folded into that weakest-first weight (per pitch class),
+ * blending scheduling with the accuracy/recency signal — mostly SRS-due notes,
+ * still a weighted random draw so sessions keep variety.
  */
 export interface QuestionPicking {
   stats: NoteStatsData
   /** Wall-clock now (ms) for recency weighting. */
   now: number
+  /** Per-pitch-class spaced-repetition state (keyed by `String(pc)`). */
+  srs?: SrsData
+}
+
+/** Pitch-class key used in the SRS store for the note trainers. */
+export function srsKeyForPc(pc: PitchClass): string {
+  return String(pc)
 }
 
 /** Candidates with `previous` filtered out, unless that would leave nothing. */
@@ -168,7 +181,9 @@ export function generateQuestion(
   if (candidates.length === 0) throw new Error('generateQuestion: no answerable questions')
   if (picking) {
     const pool = withoutPrevious(candidates, previous)
-    return pickWeightedByPc(pool, (q) => q.pc, picking.stats, rng, picking.now)
+    const srs = picking.srs
+    const boost = srs ? (pc: PitchClass) => srsWeight(srs[srsKeyForPc(pc)], picking.now) : undefined
+    return pickWeightedByPc(pool, (q) => q.pc, picking.stats, rng, picking.now, boost)
   }
   return pickAvoiding(candidates, previous, rng, sameQuestion)
 }
@@ -245,3 +260,9 @@ export function createKeyboardTrainerSettingsStore(
 
 /** The app-wide trainer settings store (localStorage-backed). */
 export const keyboardTrainerSettingsStore = createKeyboardTrainerSettingsStore()
+
+/**
+ * Per-pitch-class spaced-repetition schedule for this tool (`mt:srs:keyboard-trainer`).
+ * Keyed by `srsKeyForPc`. Tests build their own via `createSrsStore`.
+ */
+export const keyboardSrsStore = createSrsStore('keyboard-trainer')
