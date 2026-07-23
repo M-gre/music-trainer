@@ -3325,3 +3325,222 @@ a.tool-card:hover {
   background: #b8433a;
   border-color: #b8433a;
 }
+
+/* --- Ear Training: Levels mode ------------------------------------------- */
+
+.etl-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.etl-level-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.etl-level-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.etl-level-card-locked {
+  opacity: 0.6;
+}
+
+.etl-level-card-mastered {
+  border-color: #3fae6b;
+}
+
+.etl-level-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.etl-level-number {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.etl-level-titles {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.etl-level-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.etl-level-desc {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.etl-level-badge {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.etl-level-badge-mastered {
+  color: var(--bg);
+  background: #3fae6b;
+}
+
+.etl-level-badge-next {
+  color: var(--bg);
+  background: var(--accent);
+}
+
+.etl-level-lock {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1.75rem;
+}
+
+.etl-level-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.etl-level-action {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  touch-action: manipulation;
+}
+
+.etl-level-action:disabled {
+  cursor: not-allowed;
+  color: var(--text-dim);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.etl-progress {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* Inside the (row-flex) level-card footer, let the bar share the row with
+ * the action button instead of stacking full-width. Scoped here rather than
+ * on the base rule above because `.etl-progress` is reused inside the
+ * (column-flex) level-runner header, where a bare `flex: 1 1 12rem` would be
+ * interpreted as a *height* basis, not a width one. */
+.etl-level-foot .etl-progress {
+  flex: 1 1 12rem;
+  width: auto;
+}
+
+.etl-progress-bar {
+  flex: 1 1 auto;
+  height: 0.5rem;
+  min-width: 4rem;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.etl-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.etl-progress-fill-mastered {
+  background: #3fae6b;
+}
+
+.etl-progress-label {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.etl-runner {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.etl-runner-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.etl-back {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  touch-action: manipulation;
+}
+
+.etl-back:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.etl-runner-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+.etl-runner-desc {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}

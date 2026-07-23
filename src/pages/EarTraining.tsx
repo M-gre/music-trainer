@@ -129,6 +129,17 @@ import {
   type MelodicEchoSettings,
   type MelodicEchoStats,
 } from '../lib/melodicEchoTraining.ts'
+import {
+  EAR_TRAINING_LEVELS,
+  earTrainingLevelsProgressStore,
+  isLevelUnlocked,
+  levelProgressSummary,
+  normalizeLevelProgressMap,
+  recommendedLevelId,
+  recordLevelAnswer,
+  type EarTrainingLevel,
+  type LevelProgressMap,
+} from '../lib/earTrainingLevels.ts'
 
 /** Per-note playback durations (seconds); harmonic rings a little longer. */
 const MELODIC_NOTE_DURATION = 0.7
@@ -143,19 +154,22 @@ const PLAYBACK_OPTIONS: { value: PlaybackSetting; label: string }[] = [
   { value: 'random', label: PLAYBACK_LABELS.random },
 ]
 
-type EarTrainingMode = 'intervals' | 'chord-quality' | 'scales' | 'melodic-echo'
+type EarTrainingMode = 'intervals' | 'chord-quality' | 'scales' | 'melodic-echo' | 'levels'
 
 const MODE_OPTIONS: { value: EarTrainingMode; label: string }[] = [
   { value: 'intervals', label: 'Intervals' },
   { value: 'chord-quality', label: 'Chord qualities' },
   { value: 'scales', label: 'Scales' },
   { value: 'melodic-echo', label: 'Melodic echo' },
+  { value: 'levels', label: 'Levels' },
 ]
 
 export function EarTraining() {
   // Sibling modes, each a fully separate trainer with its own settings/stats
   // stores (see the file-level notes above); this segmented control is the
-  // seam a future scale/mode-recognition quiz slots into.
+  // seam a future scale/mode-recognition quiz slots into. "Levels" is a
+  // curriculum built on top of the same four trainers rather than a fifth
+  // quiz core of its own — see `LevelsTrainer` below and `earTrainingLevels.ts`.
   const [mode, setMode] = useState<EarTrainingMode>('intervals')
 
   return (
@@ -187,19 +201,33 @@ export function EarTraining() {
       {mode === 'chord-quality' && <ChordQualityTrainer />}
       {mode === 'scales' && <ScaleTrainer />}
       {mode === 'melodic-echo' && <MelodicEchoTrainer />}
+      {mode === 'levels' && <LevelsTrainer />}
     </div>
   )
 }
 
-function IntervalTrainer() {
+interface IntervalTrainerProps {
+  /**
+   * When set, this trainer runs in "Levels" mode: the interval set/playback
+   * are fixed to a level's config (no preset/chip editors, no persistence to
+   * the free-play settings store) and `onAnswer` is notified of every grade
+   * in addition to the usual per-interval stats.
+   */
+  fixedSettings?: EarTrainingSettings
+  onAnswer?: (correct: boolean) => void
+}
+
+function IntervalTrainer({ fixedSettings, onAnswer }: IntervalTrainerProps = {}) {
   const engineRef = useRef(getAudioEngine())
   const advanceTimeoutRef = useRef<number | null>(null)
+  const levelMode = fixedSettings !== undefined
 
-  const [settings, setSettings] = useState<EarTrainingSettings>(() =>
-    normalizeEarTrainingSettings(earTrainingSettingsStore.get()),
+  const [settings, setSettings] = useState<EarTrainingSettings>(
+    () => fixedSettings ?? normalizeEarTrainingSettings(earTrainingSettingsStore.get()),
   )
   useEffect(() => {
-    earTrainingSettingsStore.set(settings)
+    if (!levelMode) earTrainingSettingsStore.set(settings)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
 
   // Live context read by the (stable) question generator.
@@ -297,13 +325,14 @@ function IntervalTrainer() {
         intervalStatsStore.set(next)
         return next
       })
+      onAnswer?.(res.correct)
 
       if (res.correct) {
         clearAdvance()
         advanceTimeoutRef.current = window.setTimeout(advance, ADVANCE_MS_CORRECT)
       }
     },
-    [advance, clearAdvance],
+    [advance, clearAdvance, onAnswer],
   )
 
   const resetStats = useCallback(() => {
@@ -328,64 +357,66 @@ function IntervalTrainer() {
 
   return (
     <>
-      <div className="tool-controls">
-        <div className="tool-control-group">
-          <span className="tool-control-label">Playback</span>
-          <div className="mn-segmented" role="group" aria-label="Playback mode">
-            {PLAYBACK_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`mn-segment${settings.playback === option.value ? ' mn-segment-active' : ''}`}
-                aria-pressed={settings.playback === option.value}
-                onClick={() => setPlayback(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
+      {!levelMode && (
+        <div className="tool-controls">
+          <div className="tool-control-group">
+            <span className="tool-control-label">Playback</span>
+            <div className="mn-segmented" role="group" aria-label="Playback mode">
+              {PLAYBACK_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`mn-segment${settings.playback === option.value ? ' mn-segment-active' : ''}`}
+                  aria-pressed={settings.playback === option.value}
+                  onClick={() => setPlayback(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="tool-control-group">
-          <span className="tool-control-label">Interval set</span>
-          <div className="mn-segmented" role="group" aria-label="Interval presets">
-            {INTERVAL_PRESETS.map((preset) => {
-              const active =
-                preset.semitones.length === settings.enabled.length &&
-                preset.semitones.every((s) => settings.enabled.includes(s))
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`mn-segment${active ? ' mn-segment-active' : ''}`}
-                  aria-pressed={active}
-                  onClick={() => applyPreset(preset.semitones)}
-                >
-                  {preset.label}
-                </button>
-              )
-            })}
-          </div>
-          <div className="et-chips" role="group" aria-label="Enabled intervals">
-            {ALL_INTERVAL_SEMITONES.map((semitones) => {
-              const interval = intervalBySemitones(semitones)
-              const on = settings.enabled.includes(semitones)
-              return (
-                <button
-                  key={semitones}
-                  type="button"
-                  className={`et-chip${on ? ' et-chip-on' : ''}`}
-                  aria-pressed={on}
-                  title={interval.name}
-                  onClick={() => toggle(semitones)}
-                >
-                  {interval.short}
-                </button>
-              )
-            })}
+          <div className="tool-control-group">
+            <span className="tool-control-label">Interval set</span>
+            <div className="mn-segmented" role="group" aria-label="Interval presets">
+              {INTERVAL_PRESETS.map((preset) => {
+                const active =
+                  preset.semitones.length === settings.enabled.length &&
+                  preset.semitones.every((s) => settings.enabled.includes(s))
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`mn-segment${active ? ' mn-segment-active' : ''}`}
+                    aria-pressed={active}
+                    onClick={() => applyPreset(preset.semitones)}
+                  >
+                    {preset.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="et-chips" role="group" aria-label="Enabled intervals">
+              {ALL_INTERVAL_SEMITONES.map((semitones) => {
+                const interval = intervalBySemitones(semitones)
+                const on = settings.enabled.includes(semitones)
+                return (
+                  <button
+                    key={semitones}
+                    type="button"
+                    className={`et-chip${on ? ' et-chip-on' : ''}`}
+                    aria-pressed={on}
+                    title={interval.name}
+                    onClick={() => toggle(semitones)}
+                  >
+                    {interval.short}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="fnt-prompt" role="status" aria-live="polite">
         <IntervalPrompt question={question} answer={answer} started={started} />
@@ -487,15 +518,23 @@ const ARPEGGIO_STEP_SECONDS = 0.24
 /** How long a correct answer stays up before auto-advancing (ms). */
 const ADVANCE_MS_CORRECT_CHORD = 1000
 
-function ChordQualityTrainer() {
+interface ChordQualityTrainerProps {
+  /** See `IntervalTrainerProps.fixedSettings` — same "Levels" mode contract. */
+  fixedSettings?: ChordQualityTrainingSettings
+  onAnswer?: (correct: boolean) => void
+}
+
+function ChordQualityTrainer({ fixedSettings, onAnswer }: ChordQualityTrainerProps = {}) {
   const engineRef = useRef(getAudioEngine())
   const advanceTimeoutRef = useRef<number | null>(null)
+  const levelMode = fixedSettings !== undefined
 
-  const [settings, setSettings] = useState<ChordQualityTrainingSettings>(() =>
-    normalizeChordQualityTrainingSettings(chordQualitySettingsStore.get()),
+  const [settings, setSettings] = useState<ChordQualityTrainingSettings>(
+    () => fixedSettings ?? normalizeChordQualityTrainingSettings(chordQualitySettingsStore.get()),
   )
   useEffect(() => {
-    chordQualitySettingsStore.set(settings)
+    if (!levelMode) chordQualitySettingsStore.set(settings)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
 
   // Live context read by the (stable) question generator.
@@ -612,13 +651,14 @@ function ChordQualityTrainer() {
         chordQualityStatsStore.set(next)
         return next
       })
+      onAnswer?.(res.correct)
 
       if (res.correct) {
         clearAdvance()
         advanceTimeoutRef.current = window.setTimeout(advance, ADVANCE_MS_CORRECT_CHORD)
       }
     },
-    [advance, clearAdvance],
+    [advance, clearAdvance, onAnswer],
   )
 
   const resetStats = useCallback(() => {
@@ -642,61 +682,63 @@ function ChordQualityTrainer() {
 
   return (
     <>
-      <div className="tool-controls">
-        <div className="tool-control-group">
-          <span className="tool-control-label">Quality set</span>
-          <div className="mn-segmented" role="group" aria-label="Chord quality presets">
-            {CHORD_QUALITY_PRESETS.map((preset) => {
-              const active =
-                preset.qualityIds.length === settings.enabled.length &&
-                preset.qualityIds.every((id) => settings.enabled.includes(id))
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`mn-segment${active ? ' mn-segment-active' : ''}`}
-                  aria-pressed={active}
-                  onClick={() => applyPreset(preset.qualityIds)}
-                >
-                  {preset.label}
-                </button>
-              )
-            })}
+      {!levelMode && (
+        <div className="tool-controls">
+          <div className="tool-control-group">
+            <span className="tool-control-label">Quality set</span>
+            <div className="mn-segmented" role="group" aria-label="Chord quality presets">
+              {CHORD_QUALITY_PRESETS.map((preset) => {
+                const active =
+                  preset.qualityIds.length === settings.enabled.length &&
+                  preset.qualityIds.every((id) => settings.enabled.includes(id))
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`mn-segment${active ? ' mn-segment-active' : ''}`}
+                    aria-pressed={active}
+                    onClick={() => applyPreset(preset.qualityIds)}
+                  >
+                    {preset.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="et-chips" role="group" aria-label="Enabled chord qualities">
+              {ALL_QUALITY_IDS.map((id) => {
+                const quality = getChordQuality(id)
+                const on = settings.enabled.includes(id)
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`et-chip${on ? ' et-chip-on' : ''}`}
+                    aria-pressed={on}
+                    title={quality.name}
+                    onClick={() => toggle(id)}
+                  >
+                    {qualityShort(quality)}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          <div className="et-chips" role="group" aria-label="Enabled chord qualities">
-            {ALL_QUALITY_IDS.map((id) => {
-              const quality = getChordQuality(id)
-              const on = settings.enabled.includes(id)
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={`et-chip${on ? ' et-chip-on' : ''}`}
-                  aria-pressed={on}
-                  title={quality.name}
-                  onClick={() => toggle(id)}
-                >
-                  {qualityShort(quality)}
-                </button>
-              )
-            })}
-          </div>
-        </div>
 
-        <div className="tool-control-group">
-          <span className="tool-control-label">Difficulty</span>
-          <div className="mn-segmented" role="group" aria-label="Inversions setting">
-            <button
-              type="button"
-              className={`mn-segment${settings.inversions ? ' mn-segment-active' : ''}`}
-              aria-pressed={settings.inversions}
-              onClick={() => setInversions(!settings.inversions)}
-            >
-              Include inversions (harder)
-            </button>
+          <div className="tool-control-group">
+            <span className="tool-control-label">Difficulty</span>
+            <div className="mn-segmented" role="group" aria-label="Inversions setting">
+              <button
+                type="button"
+                className={`mn-segment${settings.inversions ? ' mn-segment-active' : ''}`}
+                aria-pressed={settings.inversions}
+                onClick={() => setInversions(!settings.inversions)}
+              >
+                Include inversions (harder)
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="fnt-prompt" role="status" aria-live="polite">
         <ChordQualityPrompt question={question} answer={answer} started={started} />
@@ -872,15 +914,23 @@ const SCALE_NOTE_DURATION = 0.35
 /** How long a correct answer stays up before auto-advancing (ms). */
 const ADVANCE_MS_CORRECT_SCALE = 1000
 
-function ScaleTrainer() {
+interface ScaleTrainerProps {
+  /** See `IntervalTrainerProps.fixedSettings` — same "Levels" mode contract. */
+  fixedSettings?: ScaleTrainingSettings
+  onAnswer?: (correct: boolean) => void
+}
+
+function ScaleTrainer({ fixedSettings, onAnswer }: ScaleTrainerProps = {}) {
   const engineRef = useRef(getAudioEngine())
   const advanceTimeoutRef = useRef<number | null>(null)
+  const levelMode = fixedSettings !== undefined
 
-  const [settings, setSettings] = useState<ScaleTrainingSettings>(() =>
-    normalizeScaleTrainingSettings(scaleSettingsStore.get()),
+  const [settings, setSettings] = useState<ScaleTrainingSettings>(
+    () => fixedSettings ?? normalizeScaleTrainingSettings(scaleSettingsStore.get()),
   )
   useEffect(() => {
-    scaleSettingsStore.set(settings)
+    if (!levelMode) scaleSettingsStore.set(settings)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
 
   // Live context read by the (stable) question generator.
@@ -996,13 +1046,14 @@ function ScaleTrainer() {
         scaleStatsStore.set(next)
         return next
       })
+      onAnswer?.(res.correct)
 
       if (res.correct) {
         clearAdvance()
         advanceTimeoutRef.current = window.setTimeout(advance, ADVANCE_MS_CORRECT_SCALE)
       }
     },
-    [advance, clearAdvance],
+    [advance, clearAdvance, onAnswer],
   )
 
   const resetStats = useCallback(() => {
@@ -1023,47 +1074,49 @@ function ScaleTrainer() {
 
   return (
     <>
-      <div className="tool-controls">
-        <div className="tool-control-group">
-          <span className="tool-control-label">Scale set</span>
-          <div className="mn-segmented" role="group" aria-label="Scale presets">
-            {SCALE_PRESETS.map((preset) => {
-              const active =
-                preset.scaleIds.length === settings.enabled.length &&
-                preset.scaleIds.every((id) => settings.enabled.includes(id))
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`mn-segment${active ? ' mn-segment-active' : ''}`}
-                  aria-pressed={active}
-                  onClick={() => applyPreset(preset.scaleIds)}
-                >
-                  {preset.label}
-                </button>
-              )
-            })}
-          </div>
-          <div className="et-chips" role="group" aria-label="Enabled scales">
-            {ALL_SCALE_IDS.map((id) => {
-              const scale = getScale(id)
-              const on = settings.enabled.includes(id)
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={`et-chip${on ? ' et-chip-on' : ''}`}
-                  aria-pressed={on}
-                  title={scale.name}
-                  onClick={() => toggle(id)}
-                >
-                  {scaleShort(scale)}
-                </button>
-              )
-            })}
+      {!levelMode && (
+        <div className="tool-controls">
+          <div className="tool-control-group">
+            <span className="tool-control-label">Scale set</span>
+            <div className="mn-segmented" role="group" aria-label="Scale presets">
+              {SCALE_PRESETS.map((preset) => {
+                const active =
+                  preset.scaleIds.length === settings.enabled.length &&
+                  preset.scaleIds.every((id) => settings.enabled.includes(id))
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`mn-segment${active ? ' mn-segment-active' : ''}`}
+                    aria-pressed={active}
+                    onClick={() => applyPreset(preset.scaleIds)}
+                  >
+                    {preset.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="et-chips" role="group" aria-label="Enabled scales">
+              {ALL_SCALE_IDS.map((id) => {
+                const scale = getScale(id)
+                const on = settings.enabled.includes(id)
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`et-chip${on ? ' et-chip-on' : ''}`}
+                    aria-pressed={on}
+                    title={scale.name}
+                    onClick={() => toggle(id)}
+                  >
+                    {scaleShort(scale)}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="fnt-prompt" role="status" aria-live="polite">
         <ScalePrompt question={question} answer={answer} started={started} />
@@ -1255,15 +1308,36 @@ const ECHO_LENGTHS: readonly number[] = Array.from(
   (_, i) => MIN_LENGTH + i,
 )
 
-function MelodicEchoTrainer() {
+interface MelodicEchoTrainerProps {
+  /**
+   * See `IntervalTrainerProps.fixedSettings` — same "Levels" mode contract,
+   * but narrower: only the phrase's difficulty (length/key/scale) is fixed
+   * by the level. The input instrument (`inputMode`) stays the player's own
+   * free-play preference either way, since it's an interaction choice, not a
+   * difficulty knob.
+   */
+  fixedSettings?: Pick<MelodicEchoSettings, 'length' | 'rootPc' | 'scaleType'>
+  onAnswer?: (correct: boolean) => void
+}
+
+function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps = {}) {
   const { tuning } = useInstrumentSettings()
   const engineRef = useRef(getAudioEngine())
+  const levelMode = fixedSettings !== undefined
 
-  const [settings, setSettings] = useState<MelodicEchoSettings>(() =>
-    normalizeMelodicEchoSettings(melodicEchoSettingsStore.get()),
-  )
+  const [settings, setSettings] = useState<MelodicEchoSettings>(() => {
+    const stored = normalizeMelodicEchoSettings(melodicEchoSettingsStore.get())
+    return fixedSettings ? { ...stored, ...fixedSettings } : stored
+  })
   useEffect(() => {
-    melodicEchoSettingsStore.set(settings)
+    if (levelMode) {
+      // Only the input-instrument preference is shared with free play here;
+      // length/root/scale come from the level and are never persisted.
+      melodicEchoSettingsStore.update((s) => ({ ...s, inputMode: settings.inputMode }))
+    } else {
+      melodicEchoSettingsStore.set(settings)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
 
   // Live context read by the (stable) question generator.
@@ -1396,9 +1470,10 @@ function MelodicEchoTrainer() {
           melodicEchoStatsStore.set(next)
           return next
         })
+        onAnswer?.(res.clean)
       }
     },
-    [done, echoState, matchMode, markStarted, playSingle],
+    [done, echoState, matchMode, markStarted, onAnswer, playSingle],
   )
 
   const resetStats = useCallback(() => {
@@ -1481,53 +1556,57 @@ function MelodicEchoTrainer() {
   return (
     <>
       <div className="tool-controls">
-        <div className="tool-control-group">
-          <span className="tool-control-label">Phrase length</span>
-          <div className="mn-segmented" role="group" aria-label="Phrase length">
-            {ECHO_LENGTHS.map((n) => (
-              <button
-                key={n}
-                type="button"
-                className={`mn-segment${settings.length === n ? ' mn-segment-active' : ''}`}
-                aria-pressed={settings.length === n}
-                onClick={() => setLength(n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="tool-control-group">
-          <span className="tool-control-label">Key</span>
-          <div className="et-echo-key">
-            <select
-              className="ip-select"
-              aria-label="Root note"
-              value={settings.rootPc}
-              onChange={(e) => setRootPc(Number(e.target.value) as PitchClass)}
-            >
-              {ALL_ROOT_PCS.map((pc) => (
-                <option key={pc} value={pc}>
-                  {pcToName(pc, ECHO_PREFER)}
-                </option>
-              ))}
-            </select>
-            <div className="mn-segmented" role="group" aria-label="Scale">
-              {(['major', 'minor'] as const).map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  className={`mn-segment${settings.scaleType === st ? ' mn-segment-active' : ''}`}
-                  aria-pressed={settings.scaleType === st}
-                  onClick={() => setScaleType(st)}
-                >
-                  {ECHO_SCALE_LABEL[st]}
-                </button>
-              ))}
+        {!levelMode && (
+          <>
+            <div className="tool-control-group">
+              <span className="tool-control-label">Phrase length</span>
+              <div className="mn-segmented" role="group" aria-label="Phrase length">
+                {ECHO_LENGTHS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`mn-segment${settings.length === n ? ' mn-segment-active' : ''}`}
+                    aria-pressed={settings.length === n}
+                    onClick={() => setLength(n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        </div>
+
+            <div className="tool-control-group">
+              <span className="tool-control-label">Key</span>
+              <div className="et-echo-key">
+                <select
+                  className="ip-select"
+                  aria-label="Root note"
+                  value={settings.rootPc}
+                  onChange={(e) => setRootPc(Number(e.target.value) as PitchClass)}
+                >
+                  {ALL_ROOT_PCS.map((pc) => (
+                    <option key={pc} value={pc}>
+                      {pcToName(pc, ECHO_PREFER)}
+                    </option>
+                  ))}
+                </select>
+                <div className="mn-segmented" role="group" aria-label="Scale">
+                  {(['major', 'minor'] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      className={`mn-segment${settings.scaleType === st ? ' mn-segment-active' : ''}`}
+                      aria-pressed={settings.scaleType === st}
+                      onClick={() => setScaleType(st)}
+                    >
+                      {ECHO_SCALE_LABEL[st]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="tool-control-group">
           <span className="tool-control-label">Echo on</span>
@@ -1713,6 +1792,170 @@ function MelodicEchoStatsPanel({ session, lifetime, onReset }: MelodicEchoStatsP
           </span>
         </div>
       </div>
+    </div>
+  )
+}
+
+// --- Levels (curriculum built on the four trainers above) -------------------
+
+/**
+ * A progressive curriculum: `EAR_TRAINING_LEVELS` bundles the four trainers
+ * above into an ordered list the player works through. This component owns
+ * only the level list + progress store; the actual quiz for a selected level
+ * is one of the trainers above, constrained via its `fixedSettings` prop and
+ * reporting back through `onAnswer` (see `LevelRunner`) — no quiz logic is
+ * duplicated here.
+ */
+function LevelsTrainer() {
+  const [progress, setProgress] = useState<LevelProgressMap>(() =>
+    normalizeLevelProgressMap(earTrainingLevelsProgressStore.get()),
+  )
+  const [activeLevelId, setActiveLevelId] = useState<string | null>(null)
+
+  const recommended = useMemo(
+    () => recommendedLevelId(EAR_TRAINING_LEVELS, progress),
+    [progress],
+  )
+
+  const handleAnswer = useCallback((levelId: string, correct: boolean) => {
+    setProgress((current) => {
+      const next = recordLevelAnswer(current, levelId, correct)
+      earTrainingLevelsProgressStore.set(next)
+      return next
+    })
+  }, [])
+
+  const activeLevel = activeLevelId
+    ? (EAR_TRAINING_LEVELS.find((level) => level.id === activeLevelId) ?? null)
+    : null
+
+  if (activeLevel) {
+    return (
+      <LevelRunner
+        key={activeLevel.id}
+        level={activeLevel}
+        progress={progress[activeLevel.id]}
+        onAnswer={(correct) => handleAnswer(activeLevel.id, correct)}
+        onBack={() => setActiveLevelId(null)}
+      />
+    )
+  }
+
+  return (
+    <div className="etl-levels">
+      <p className="fnt-hint">
+        A guided path through every trainer above, easiest first. Master a level (18/20 recent
+        answers correct) to unlock the next one.
+      </p>
+      <ol className="etl-level-list">
+        {EAR_TRAINING_LEVELS.map((level, index) => {
+          const unlocked = isLevelUnlocked(EAR_TRAINING_LEVELS, progress, level.id)
+          const summary = levelProgressSummary(progress[level.id])
+          const isRecommended = level.id === recommended && unlocked && !summary.mastered
+          const cardCls = ['etl-level-card']
+          if (!unlocked) cardCls.push('etl-level-card-locked')
+          if (summary.mastered) cardCls.push('etl-level-card-mastered')
+          return (
+            <li key={level.id} className={cardCls.join(' ')}>
+              <div className="etl-level-head">
+                <span className="etl-level-number">{index + 1}</span>
+                <div className="etl-level-titles">
+                  <span className="etl-level-title">{level.title}</span>
+                  <span className="etl-level-desc">{level.description}</span>
+                </div>
+                {summary.mastered && (
+                  <span className="etl-level-badge etl-level-badge-mastered">Mastered</span>
+                )}
+                {!summary.mastered && isRecommended && (
+                  <span className="etl-level-badge etl-level-badge-next">Up next</span>
+                )}
+                {!unlocked && <span className="etl-level-lock" aria-hidden="true">🔒</span>}
+              </div>
+              <div className="etl-level-foot">
+                <LevelProgressBar summary={summary} />
+                <button
+                  type="button"
+                  className="etl-level-action"
+                  disabled={!unlocked}
+                  onClick={() => setActiveLevelId(level.id)}
+                >
+                  {unlocked ? (summary.attempts > 0 ? 'Continue' : 'Start') : 'Locked'}
+                </button>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+interface LevelProgressBarProps {
+  summary: ReturnType<typeof levelProgressSummary>
+}
+
+/** Small "toward mastery" bar + label, shared by the level list and the runner. */
+function LevelProgressBar({ summary }: LevelProgressBarProps) {
+  const pct = summary.mastered ? 100 : Math.round((summary.accuracy ?? 0) * 100)
+  return (
+    <div className="etl-progress" role="status" aria-live="polite">
+      <div className="etl-progress-bar">
+        <div
+          className={`etl-progress-fill${summary.mastered ? ' etl-progress-fill-mastered' : ''}`}
+          style={{ width: `${summary.mastered ? 100 : Math.min(100, pct)}%` }}
+        />
+      </div>
+      <span className="etl-progress-label">{summary.label}</span>
+    </div>
+  )
+}
+
+interface LevelRunnerProps {
+  level: EarTrainingLevel
+  progress: LevelProgressMap[string] | undefined
+  onAnswer: (correct: boolean) => void
+  onBack: () => void
+}
+
+/** Runs one level's task on the matching existing trainer, constrained to
+ * the level's fixed config, and feeds every graded answer back into the
+ * level's progress. */
+function LevelRunner({ level, progress, onAnswer, onBack }: LevelRunnerProps) {
+  const summary = levelProgressSummary(progress)
+  const { task } = level
+
+  return (
+    <div className="etl-runner">
+      <div className="etl-runner-head">
+        <button type="button" className="etl-back" onClick={onBack}>
+          ← Back to levels
+        </button>
+        <h2 className="etl-runner-title">{level.title}</h2>
+        <p className="etl-runner-desc">{level.description}</p>
+        <LevelProgressBar summary={summary} />
+      </div>
+
+      {task.kind === 'interval' && (
+        <IntervalTrainer
+          fixedSettings={{ enabled: task.enabled, playback: task.playback }}
+          onAnswer={onAnswer}
+        />
+      )}
+      {task.kind === 'chord-quality' && (
+        <ChordQualityTrainer
+          fixedSettings={{ enabled: task.enabled, inversions: task.inversions }}
+          onAnswer={onAnswer}
+        />
+      )}
+      {task.kind === 'scale' && (
+        <ScaleTrainer fixedSettings={{ enabled: task.enabled }} onAnswer={onAnswer} />
+      )}
+      {task.kind === 'melodic-echo' && (
+        <MelodicEchoTrainer
+          fixedSettings={{ length: task.length, rootPc: task.rootPc, scaleType: task.scaleType }}
+          onAnswer={onAnswer}
+        />
+      )}
     </div>
   )
 }
