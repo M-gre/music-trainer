@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   AudioEngine,
   DEFAULT_MASTER_VOLUME,
+  type AudioBufferLike,
+  type AudioBufferSourceNodeLike,
   type AudioNodeLike,
   type AudioParamLike,
+  type BiquadFilterNodeLike,
   type DynamicsCompressorNodeLike,
   type GainNodeLike,
   type MinimalAudioContext,
@@ -15,7 +18,7 @@ import {
 // genuinely minimal. No real AudioContext is ever constructed.
 
 interface ParamEvent {
-  type: 'set' | 'linear' | 'cancel'
+  type: 'set' | 'linear' | 'exp' | 'cancel'
   value: number
   time: number
 }
@@ -28,6 +31,9 @@ class FakeParam implements AudioParamLike {
   }
   linearRampToValueAtTime(value: number, time: number): void {
     this.events.push({ type: 'linear', value, time })
+  }
+  exponentialRampToValueAtTime(value: number, time: number): void {
+    this.events.push({ type: 'exp', value, time })
   }
   cancelScheduledValues(time: number): void {
     this.events.push({ type: 'cancel', value: 0, time })
@@ -72,6 +78,54 @@ class FakeOscillator implements OscillatorNodeLike {
   }
 }
 
+class FakeBiquadFilter implements BiquadFilterNodeLike {
+  type: BiquadFilterType = 'lowpass'
+  readonly frequency = new FakeParam()
+  readonly Q = new FakeParam()
+  connectedTo: AudioNodeLike[] = []
+  disconnected = false
+  connect(destination: AudioNodeLike): void {
+    this.connectedTo.push(destination)
+  }
+  disconnect(): void {
+    this.disconnected = true
+  }
+}
+
+class FakeAudioBuffer implements AudioBufferLike {
+  private readonly channel: Float32Array
+  constructor(length: number) {
+    this.channel = new Float32Array(length)
+  }
+  getChannelData(): Float32Array {
+    return this.channel
+  }
+}
+
+class FakeBufferSource implements AudioBufferSourceNodeLike {
+  buffer: AudioBufferLike | null = null
+  onended: unknown = null
+  connectedTo: AudioNodeLike[] = []
+  disconnected = false
+  started: number | undefined
+  stopped: number | undefined
+  connect(destination: AudioNodeLike): void {
+    this.connectedTo.push(destination)
+  }
+  disconnect(): void {
+    this.disconnected = true
+  }
+  start(when?: number): void {
+    this.started = when
+  }
+  stop(when?: number): void {
+    this.stopped = when
+  }
+  fireEnded(): void {
+    ;(this.onended as (() => void) | null)?.()
+  }
+}
+
 class FakeCompressor implements DynamicsCompressorNodeLike {
   readonly threshold = new FakeParam()
   readonly knee = new FakeParam()
@@ -87,12 +141,15 @@ class FakeCompressor implements DynamicsCompressorNodeLike {
 
 class FakeContext implements MinimalAudioContext {
   currentTime = 10
+  sampleRate = 48000
   state: AudioContextState = 'suspended'
   readonly destination: AudioNodeLike = { connect: () => {}, disconnect: () => {} }
   resumeCalls = 0
   gains: FakeGain[] = []
   oscillators: FakeOscillator[] = []
   compressors: FakeCompressor[] = []
+  filters: FakeBiquadFilter[] = []
+  bufferSources: FakeBufferSource[] = []
   createGain(): GainNodeLike {
     const g = new FakeGain()
     this.gains.push(g)
@@ -102,6 +159,19 @@ class FakeContext implements MinimalAudioContext {
     const o = new FakeOscillator()
     this.oscillators.push(o)
     return o
+  }
+  createBiquadFilter(): BiquadFilterNodeLike {
+    const f = new FakeBiquadFilter()
+    this.filters.push(f)
+    return f
+  }
+  createBufferSource(): AudioBufferSourceNodeLike {
+    const s = new FakeBufferSource()
+    this.bufferSources.push(s)
+    return s
+  }
+  createBuffer(_channels: number, length: number): AudioBufferLike {
+    return new FakeAudioBuffer(length)
   }
   createDynamicsCompressor(): DynamicsCompressorNodeLike {
     const c = new FakeCompressor()
@@ -249,40 +319,140 @@ describe('AudioEngine.currentTime', () => {
 })
 
 describe('AudioEngine.playClick', () => {
-  it('wires a single oscillator through a click gain into the master', () => {
+  it('wires an oscillator source through a click gain into the master', () => {
     const { engine, factory } = makeEngine()
-    engine.playClick({ frequency: 1200, when: 5, gain: 0.5, duration: 0.04 })
+    engine.playClick({
+      gain: 0.5,
+      duration: 0.04,
+      attack: 0.004,
+      when: 5,
+      source: { kind: 'osc', type: 'triangle', frequency: 1200 },
+    })
     const ctx = factory()
     expect(ctx.oscillators.length).toBe(1)
     expect(ctx.gains.length).toBe(2) // master + click gain
+    expect(ctx.filters.length).toBe(0)
     const master = ctx.gains[0]!
     const click = ctx.gains[1]!
     const osc = ctx.oscillators[0]!
     expect(click.connectedTo).toContain(master)
     expect(osc.connectedTo).toContain(click)
-    expect(osc.type).toBe('square')
+    expect(osc.type).toBe('triangle')
     expect(osc.frequency.events[0]?.value).toBe(1200)
     expect(osc.started).toBe(5)
     expect(osc.stopped).toBeGreaterThan(5)
   })
 
-  it('rises to the peak gain then decays back to silence', () => {
+  it('rises to the peak gain then decays exponentially toward silence', () => {
     const { engine, factory } = makeEngine()
-    engine.playClick({ frequency: 1000, when: 0, gain: 0.5, duration: 0.04 })
+    engine.playClick({
+      gain: 0.5,
+      duration: 0.04,
+      attack: 0.004,
+      when: 0,
+      source: { kind: 'osc', type: 'sine', frequency: 1000 },
+    })
     const click = factory().gains[1]!
     const linear = click.gain.events.filter((e) => e.type === 'linear')
-    expect(linear[0]?.value).toBe(0.5)
-    expect(linear[linear.length - 1]?.value).toBe(0)
+    expect(linear[0]?.value).toBe(0.5) // ramps up to the peak
+    const exp = click.gain.events.filter((e) => e.type === 'exp')
+    expect(exp[exp.length - 1]?.value).toBeGreaterThan(0) // exp cannot hit 0
+    expect(exp[exp.length - 1]?.value).toBeLessThan(0.001) // but is inaudible
+  })
+
+  it('ramps the oscillator pitch down when endFrequency is given (woodblock drop)', () => {
+    const { engine, factory } = makeEngine()
+    engine.playClick({
+      gain: 0.5,
+      duration: 0.05,
+      attack: 0.001,
+      when: 0,
+      source: { kind: 'osc', type: 'triangle', frequency: 900, endFrequency: 450 },
+    })
+    const osc = factory().oscillators[0]!
+    const drop = osc.frequency.events.find((e) => e.type === 'exp')
+    expect(drop?.value).toBeCloseTo(450)
+  })
+
+  it('routes an oscillator through a filter when one is specified', () => {
+    const { engine, factory } = makeEngine()
+    engine.playClick({
+      gain: 0.5,
+      duration: 0.05,
+      attack: 0.001,
+      when: 0,
+      source: { kind: 'osc', type: 'triangle', frequency: 900 },
+      filter: { type: 'lowpass', frequency: 3600, q: 0.7 },
+    })
+    const ctx = factory()
+    expect(ctx.filters.length).toBe(1)
+    const filter = ctx.filters[0]!
+    const osc = ctx.oscillators[0]!
+    const click = ctx.gains[1]!
+    expect(osc.connectedTo).toContain(filter) // source -> filter
+    expect(filter.connectedTo).toContain(click) // filter -> gain
+    expect(filter.type).toBe('lowpass')
+    expect(filter.frequency.events[0]?.value).toBe(3600)
+  })
+
+  it('synthesizes a bandpassed noise burst for a noise source (tick)', () => {
+    const { engine, factory } = makeEngine()
+    engine.playClick({
+      gain: 0.4,
+      duration: 0.025,
+      attack: 0.001,
+      when: 2,
+      source: { kind: 'noise' },
+      filter: { type: 'bandpass', frequency: 2600, q: 6 },
+    })
+    const ctx = factory()
+    expect(ctx.oscillators.length).toBe(0)
+    expect(ctx.bufferSources.length).toBe(1)
+    expect(ctx.filters.length).toBe(1)
+    const noise = ctx.bufferSources[0]!
+    const filter = ctx.filters[0]!
+    expect(noise.buffer).not.toBeNull()
+    expect(noise.connectedTo).toContain(filter)
+    expect(filter.type).toBe('bandpass')
+    expect(noise.started).toBe(2)
+    expect(noise.stopped).toBeGreaterThan(2)
   })
 
   it('disconnects its nodes when the oscillator ends', () => {
     const { engine, factory } = makeEngine()
-    engine.playClick({ frequency: 1000 })
+    engine.playClick({
+      gain: 0.5,
+      duration: 0.05,
+      attack: 0.001,
+      source: { kind: 'osc', type: 'triangle', frequency: 900 },
+      filter: { type: 'lowpass', frequency: 3600, q: 0.7 },
+    })
     const ctx = factory()
     const click = ctx.gains[1]!
+    const filter = ctx.filters[0]!
     const osc = ctx.oscillators[0] as FakeOscillator
     osc.fireEnded()
     expect(osc.disconnected).toBe(true)
+    expect(filter.disconnected).toBe(true)
+    expect(click.disconnected).toBe(true)
+  })
+
+  it('disconnects its nodes when a noise source ends', () => {
+    const { engine, factory } = makeEngine()
+    engine.playClick({
+      gain: 0.4,
+      duration: 0.025,
+      attack: 0.001,
+      source: { kind: 'noise' },
+      filter: { type: 'bandpass', frequency: 2600, q: 6 },
+    })
+    const ctx = factory()
+    const click = ctx.gains[1]!
+    const filter = ctx.filters[0]!
+    const noise = ctx.bufferSources[0]!
+    noise.fireEnded()
+    expect(noise.disconnected).toBe(true)
+    expect(filter.disconnected).toBe(true)
     expect(click.disconnected).toBe(true)
   })
 })

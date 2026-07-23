@@ -35,6 +35,7 @@ export interface AudioParamLike {
   value: number
   setValueAtTime(value: number, startTime: number): unknown
   linearRampToValueAtTime(value: number, endTime: number): unknown
+  exponentialRampToValueAtTime(value: number, endTime: number): unknown
   cancelScheduledValues(cancelTime: number): unknown
 }
 
@@ -56,6 +57,23 @@ export interface OscillatorNodeLike extends AudioNodeLike {
   stop(when?: number): void
 }
 
+export interface BiquadFilterNodeLike extends AudioNodeLike {
+  type: BiquadFilterType
+  readonly frequency: AudioParamLike
+  readonly Q: AudioParamLike
+}
+
+export interface AudioBufferLike {
+  getChannelData(channel: number): Float32Array
+}
+
+export interface AudioBufferSourceNodeLike extends AudioNodeLike {
+  buffer: AudioBufferLike | null
+  onended: unknown
+  start(when?: number): void
+  stop(when?: number): void
+}
+
 export interface DynamicsCompressorNodeLike extends AudioNodeLike {
   readonly threshold: AudioParamLike
   readonly knee: AudioParamLike
@@ -66,10 +84,14 @@ export interface DynamicsCompressorNodeLike extends AudioNodeLike {
 
 export interface MinimalAudioContext {
   readonly currentTime: number
+  readonly sampleRate: number
   readonly state: AudioContextState
   readonly destination: AudioNodeLike
   createGain(): GainNodeLike
   createOscillator(): OscillatorNodeLike
+  createBiquadFilter(): BiquadFilterNodeLike
+  createBufferSource(): AudioBufferSourceNodeLike
+  createBuffer(numberOfChannels: number, length: number, sampleRate: number): AudioBufferLike
   createDynamicsCompressor(): DynamicsCompressorNodeLike
   resume(): Promise<void>
 }
@@ -92,12 +114,14 @@ const VOICE_LEVEL = 0.35
 /** Short ramp used when changing the master volume so it never clicks. */
 const VOLUME_RAMP = 0.02
 
-/** Fade-in of a click so the attack transient is snappy but not a hard step. */
-const CLICK_ATTACK = 0.001
-/** Default gain of a click blip (0..1). */
-const DEFAULT_CLICK_GAIN = 0.6
-/** Default total length of a click blip, seconds. */
-const DEFAULT_CLICK_DURATION = 0.04
+/** Shortest fade-in of a click so a hard-step attack transient never clicks. */
+const CLICK_ATTACK = 0.0008
+/**
+ * Floor for exponential ramps to "silence" — `exponentialRampToValueAtTime`
+ * cannot target 0. A tiny positive value reads as silent while giving a
+ * natural percussive decay curve (unlike a linear ramp, which sounds abrupt).
+ */
+const CLICK_FLOOR = 0.0001
 
 // --- Options ----------------------------------------------------------------
 
@@ -115,17 +139,40 @@ export interface PlayNoteOptions extends Partial<AdsrParams> {
   detune?: number
 }
 
-export interface ClickOptions {
-  /** Click pitch in Hz. Higher reads as a stronger accent. */
-  frequency: number
-  /** Peak linear gain, 0..1. Default 0.6. */
-  gain?: number
-  /** Total blip length in seconds. Default 0.04. Kept short so it never rings. */
-  duration?: number
+/**
+ * The tone generator for a click voice. Either a pitched oscillator (with an
+ * optional fast pitch drop for a woodblock-style "tok") or a white-noise burst
+ * (shaped by a bandpass `filter` into a rim/tick sound).
+ */
+export type ClickSource =
+  | {
+      kind: 'osc'
+      type: OscillatorType
+      /** Start pitch in Hz. */
+      frequency: number
+      /** Optional pitch-drop target; the pitch ramps here over the duration. */
+      endFrequency?: number
+    }
+  | { kind: 'noise' }
+
+/**
+ * A fully-resolved recipe for one synthesized click, produced by the pure
+ * voice/accent tables in `clickVoices.ts`. The engine just wires the nodes;
+ * every timbral decision lives in the (testable) parameters here.
+ */
+export interface ClickSpec {
+  /** Peak linear gain, 0..1. */
+  gain: number
+  /** Total length in seconds. Kept short so a click never rings. */
+  duration: number
+  /** Fade-in time in seconds — larger reads as a softer, gentler attack. */
+  attack: number
+  /** The tone generator. */
+  source: ClickSource
+  /** Optional single biquad filter to warm (lowpass) or shape (bandpass) it. */
+  filter?: { type: BiquadFilterType; frequency: number; q: number }
   /** Absolute AudioContext start time. Default: now. */
   when?: number
-  /** Oscillator waveform. Default `'square'` for a clicky transient. */
-  type?: OscillatorType
 }
 
 // --- Engine -----------------------------------------------------------------
@@ -268,33 +315,81 @@ export class AudioEngine {
 
   /**
    * Play a short percussive click (metronome tick, count-in, etc.) through the
-   * shared master chain. Unlike `playNote` this is a single oscillator with a
-   * fast linear decay to silence — clicky and dry, with no sustain or release
-   * ring. Accent vs. subdivision is just a matter of `frequency`/`gain`.
+   * shared master chain, following a synthesized `ClickSpec`: a soft-ish fade-in
+   * followed by an exponential decay to silence (percussive, no ring), an
+   * oscillator or noise source, and an optional biquad filter. The voice/accent
+   * design lives in the pure `clickVoices.ts` tables — this just wires nodes.
    */
-  playClick(opts: ClickOptions): void {
+  playClick(spec: ClickSpec): void {
     const { ctx, master } = this.init()
-    const when = opts.when ?? ctx.currentTime
-    const peak = clamp01(opts.gain ?? DEFAULT_CLICK_GAIN)
-    const duration = Math.max(CLICK_ATTACK * 2, opts.duration ?? DEFAULT_CLICK_DURATION)
+    const when = spec.when ?? ctx.currentTime
+    const peak = Math.max(CLICK_FLOOR, clamp01(spec.gain))
+    const attack = Math.max(CLICK_ATTACK, spec.attack)
+    const duration = Math.max(attack + 0.004, spec.duration)
+    const stopAt = when + duration + 0.01
 
+    // Percussive envelope: quick (or soft) fade-in, exponential fall to silence.
     const clickGain = ctx.createGain()
     clickGain.gain.value = 0
     clickGain.connect(master)
-    clickGain.gain.setValueAtTime(0, when)
-    clickGain.gain.linearRampToValueAtTime(peak, when + CLICK_ATTACK)
-    clickGain.gain.linearRampToValueAtTime(0, when + duration)
+    clickGain.gain.setValueAtTime(CLICK_FLOOR, when)
+    clickGain.gain.linearRampToValueAtTime(peak, when + attack)
+    clickGain.gain.exponentialRampToValueAtTime(CLICK_FLOOR, when + duration)
 
-    const osc = ctx.createOscillator()
-    osc.type = opts.type ?? 'square'
-    osc.frequency.setValueAtTime(opts.frequency, when)
-    osc.connect(clickGain)
-    osc.onended = (): void => {
-      osc.disconnect()
+    // Optional single filter node sits between the source and the gain.
+    let sourceTarget: AudioNodeLike = clickGain
+    let filter: BiquadFilterNodeLike | null = null
+    if (spec.filter) {
+      filter = ctx.createBiquadFilter()
+      filter.type = spec.filter.type
+      filter.frequency.setValueAtTime(spec.filter.frequency, when)
+      filter.Q.setValueAtTime(spec.filter.q, when)
+      filter.connect(clickGain)
+      sourceTarget = filter
+    }
+
+    const teardown = (source: AudioNodeLike): void => {
+      source.disconnect()
+      filter?.disconnect()
       clickGain.disconnect()
     }
+
+    if (spec.source.kind === 'noise') {
+      const noise = this.makeNoiseSource(ctx, duration)
+      noise.connect(sourceTarget)
+      noise.onended = (): void => teardown(noise)
+      noise.start(when)
+      noise.stop(stopAt)
+      return
+    }
+
+    const osc = ctx.createOscillator()
+    osc.type = spec.source.type
+    osc.frequency.setValueAtTime(spec.source.frequency, when)
+    if (spec.source.endFrequency !== undefined) {
+      osc.frequency.exponentialRampToValueAtTime(
+        Math.max(CLICK_FLOOR, spec.source.endFrequency),
+        when + duration,
+      )
+    }
+    osc.connect(sourceTarget)
+    osc.onended = (): void => teardown(osc)
     osc.start(when)
-    osc.stop(when + duration + CLICK_ATTACK)
+    osc.stop(stopAt)
+  }
+
+  /** Build a one-shot white-noise buffer source long enough to cover `duration`. */
+  private makeNoiseSource(
+    ctx: MinimalAudioContext,
+    duration: number,
+  ): AudioBufferSourceNodeLike {
+    const length = Math.max(1, Math.ceil(ctx.sampleRate * duration))
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    return source
   }
 
   /** Play several notes at once with shared options. */

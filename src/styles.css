@@ -438,28 +438,125 @@ a.tool-card:hover {
   border-radius: 10px;
 }
 
+/* Each beat is a button with a >=44px touch target; the visible dot is centered
+   inside and sized/colored by its accent level. */
+.mn-dot-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  border-radius: 50%;
+}
+
 .mn-dot {
+  display: block;
   width: 1.5rem;
   height: 1.5rem;
   border-radius: 50%;
   background: var(--bg);
   border: 2px solid var(--border);
-  transition: transform 60ms ease, background 60ms ease, border-color 60ms ease;
+  transition: transform 60ms ease, background 60ms ease, border-color 60ms ease,
+    width 80ms ease, height 80ms ease;
 }
 
-.mn-dot-one {
+/* Accent levels: rising size + intensity. Off is a hollow, dim outline. */
+.mn-dot-off {
+  width: 0.9rem;
+  height: 0.9rem;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border);
+  opacity: 0.6;
+}
+
+.mn-dot-low {
+  width: 1.1rem;
+  height: 1.1rem;
   border-color: var(--accent-dim);
 }
 
+.mn-dot-mid {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg));
+}
+
+.mn-dot-high {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 55%, var(--bg));
+}
+
+/* The currently-sounding beat lights up regardless of accent level. */
 .mn-dot-active {
   background: #4a90d9;
   border-color: #4a90d9;
-  transform: scale(1.2);
+  transform: scale(1.18);
 }
 
-.mn-dot-one.mn-dot-active {
+.mn-dot-active .mn-dot-high {
   background: var(--accent);
   border-color: var(--accent);
+}
+
+.mn-beats-hint {
+  margin: 0.4rem 0 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+/* ---- Click-sound picker ---- */
+
+.mn-sound-group {
+  flex: 1 1 100%;
+}
+
+.mn-sounds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.mn-sound {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: flex-start;
+  text-align: left;
+  min-height: 44px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: border-color 60ms ease, background 60ms ease;
+}
+
+.mn-sound-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+}
+
+.mn-sound-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.mn-sound-desc {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  line-height: 1.25;
 }
 
 .mn-tempo-group {

@@ -16,10 +16,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  CLICK_VOICES,
+  cycleAccent,
   getAudioEngine,
   registerTap,
+  resolveClickParams,
   Scheduler,
-  type ClickOptions,
+  type AccentLevel,
+  type ClickVoiceId,
   type SchedulerEvent,
 } from '../lib/audio/index.ts'
 import {
@@ -29,20 +33,25 @@ import {
   metronomeSettingsStore,
   MIN_TEMPO,
   normalizeMetronomeSettings,
+  resizeAccents,
   SUBDIVISION_OPTIONS,
 } from '../lib/metronomeSettings.ts'
-
-// Click voices. Accent (beat 1) is highest + loudest; subdivisions are quieter
-// and shorter so the main pulse stays clear.
-const ACCENT_CLICK: Omit<ClickOptions, 'when'> = { frequency: 1900, gain: 0.75, duration: 0.045 }
-const BEAT_CLICK: Omit<ClickOptions, 'when'> = { frequency: 1250, gain: 0.5, duration: 0.04 }
-const SUB_CLICK: Omit<ClickOptions, 'when'> = { frequency: 950, gain: 0.26, duration: 0.022 }
 
 const SUBDIVISION_LABELS: Record<number, string> = {
   1: 'Quarter',
   2: 'Eighth',
   3: 'Triplet',
   4: 'Sixteenth',
+}
+
+/** Off-beat subdivisions always tick at a fixed quiet level, under the beats. */
+const SUBDIVISION_ACCENT: AccentLevel = 'low'
+
+const ACCENT_LABELS: Record<AccentLevel, string> = {
+  off: 'off',
+  low: 'low',
+  mid: 'mid',
+  high: 'high',
 }
 
 export function Metronome() {
@@ -55,13 +64,28 @@ export function Metronome() {
   const [tempo, setTempo] = useState(settings.bpm)
   const [beatsPerBar, setBeatsPerBar] = useState(settings.beatsPerBar)
   const [subdivisionsPerBeat, setSubdivisionsPerBeat] = useState(settings.subdivisionsPerBeat)
+  const [soundId, setSoundId] = useState<ClickVoiceId>(settings.soundId)
+  const [accents, setAccents] = useState<AccentLevel[]>(settings.accents)
   const [running, setRunning] = useState(false)
   const [activeBeat, setActiveBeat] = useState<number | null>(null)
 
+  // The scheduler's onEvent callback is set once and must stay stable, so it
+  // reads the live voice + accent pattern from refs rather than closures.
+  const soundIdRef = useRef(soundId)
+  const accentsRef = useRef(accents)
+  soundIdRef.current = soundId
+  accentsRef.current = accents
+
   // Persist preferences whenever they change.
   useEffect(() => {
-    metronomeSettingsStore.set({ bpm: tempo, beatsPerBar, subdivisionsPerBeat })
-  }, [tempo, beatsPerBar, subdivisionsPerBeat])
+    metronomeSettingsStore.set({ bpm: tempo, beatsPerBar, subdivisionsPerBeat, soundId, accents })
+  }, [tempo, beatsPerBar, subdivisionsPerBeat, soundId, accents])
+
+  // Keep the accent pattern sized to the meter: preserve existing beats, fill
+  // new ones with the default (mid), drop removed ones.
+  useEffect(() => {
+    setAccents((prev) => resizeAccents(prev, beatsPerBar))
+  }, [beatsPerBar])
 
   // Apply changes to a live scheduler without stopping it.
   useEffect(() => {
@@ -71,14 +95,52 @@ export function Metronome() {
     schedulerRef.current?.setMeter({ beatsPerBar, subdivisionsPerBeat })
   }, [beatsPerBar, subdivisionsPerBeat])
 
-  // Click voice per grid step: accent on beat 1, plain click on other beats,
-  // quiet click on off-beat subdivisions. Depends only on the event, so stable.
+  // Click voice per grid step: the beat's own accent level on the beat, a fixed
+  // quiet tick on off-beat subdivisions. Reads voice + accents from refs so the
+  // callback identity stays stable across setting changes.
   const handleEvent = useCallback((event: SchedulerEvent, when: number) => {
     const engine = engineRef.current
-    if (event.subdivision !== 0) engine.playClick({ ...SUB_CLICK, when })
-    else if (event.beat === 0) engine.playClick({ ...ACCENT_CLICK, when })
-    else engine.playClick({ ...BEAT_CLICK, when })
+    const voice = soundIdRef.current
+    if (event.subdivision !== 0) {
+      const spec = resolveClickParams(voice, SUBDIVISION_ACCENT, true)
+      if (spec) engine.playClick({ ...spec, when })
+      return
+    }
+    const level = accentsRef.current[event.beat] ?? 'mid'
+    const spec = resolveClickParams(voice, level, false)
+    if (spec) engine.playClick({ ...spec, when })
   }, [])
+
+  // Play a single preview click at the given level via the shared engine,
+  // ensuring the AudioContext is running (this runs inside a user gesture).
+  const previewClick = useCallback((voice: ClickVoiceId, level: AccentLevel) => {
+    const engine = engineRef.current
+    void engine.ensureRunning().then(() => {
+      const spec = resolveClickParams(voice, level, false)
+      if (spec) engine.playClick({ ...spec })
+    })
+  }, [])
+
+  const changeSound = useCallback(
+    (id: ClickVoiceId) => {
+      setSoundId(id)
+      previewClick(id, 'high')
+    },
+    [previewClick],
+  )
+
+  const cycleBeatAccent = useCallback(
+    (index: number) => {
+      const nextLevel = cycleAccent(accentsRef.current[index] ?? 'mid')
+      setAccents((prev) => {
+        const next = [...prev]
+        next[index] = nextLevel
+        return next
+      })
+      if (nextLevel !== 'off') previewClick(soundIdRef.current, nextLevel)
+    },
+    [previewClick],
+  )
 
   // Drive the beat indicator from the audio-accurate position, only
   // re-rendering when the lit beat actually changes.
@@ -152,18 +214,24 @@ export function Metronome() {
         </p>
       </div>
 
-      <div
-        className="mn-beats"
-        role="img"
-        aria-label={`${beatsPerBar} beats per bar, accent on beat 1`}
-      >
+      <div className="mn-beats" role="group" aria-label="Per-beat accents — tap a beat to change its accent">
         {beats.map((i) => {
-          const classes = ['mn-dot']
-          if (i === 0) classes.push('mn-dot-one')
-          if (running && activeBeat === i) classes.push('mn-dot-active')
-          return <span key={i} className={classes.join(' ')} />
+          const level = accents[i] ?? 'mid'
+          const active = running && activeBeat === i
+          return (
+            <button
+              key={i}
+              type="button"
+              className={`mn-dot-btn${active ? ' mn-dot-active' : ''}`}
+              onClick={() => cycleBeatAccent(i)}
+              aria-label={`Beat ${i + 1} accent: ${ACCENT_LABELS[level]}. Tap to change.`}
+            >
+              <span className={`mn-dot mn-dot-${level}`} />
+            </button>
+          )
         })}
       </div>
+      <p className="mn-beats-hint">Tap a beat to cycle its accent: off → low → mid → high.</p>
 
       <div className="tool-controls">
         <div className="tool-control-group mn-tempo-group">
@@ -215,6 +283,26 @@ export function Metronome() {
             onChange={setSubdivisionsPerBeat}
             renderLabel={(n) => SUBDIVISION_LABELS[n] ?? String(n)}
           />
+        </div>
+
+        <div className="tool-control-group mn-sound-group">
+          <span className="tool-control-label">Click sound</span>
+          <div className="mn-sounds" role="radiogroup" aria-label="Click sound">
+            {CLICK_VOICES.map((voice) => (
+              <button
+                key={voice.id}
+                type="button"
+                role="radio"
+                aria-checked={voice.id === soundId}
+                className={`mn-sound${voice.id === soundId ? ' mn-sound-active' : ''}`}
+                title={voice.description}
+                onClick={() => changeSound(voice.id)}
+              >
+                <span className="mn-sound-name">{voice.label}</span>
+                <span className="mn-sound-desc">{voice.description}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
