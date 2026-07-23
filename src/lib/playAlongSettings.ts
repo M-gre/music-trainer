@@ -37,6 +37,8 @@ export interface PlayAlongSettings {
   mutedVoices: DrumVoice[]
   /** Chord-progression accompaniment (comping voice) settings. */
   accompaniment: AccompanimentSettings
+  /** Show the current chord's tones on a fretboard (for building bass lines). */
+  showChordTones: boolean
 }
 
 /** Tempo range offered by the Play-Along slider/steppers. */
@@ -90,6 +92,7 @@ export const DEFAULT_PLAY_ALONG_SETTINGS: PlayAlongSettings = {
   masterVolume: DEFAULT_MASTER_VOLUME,
   mutedVoices: [],
   accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
+  showChordTones: true,
 }
 
 /**
@@ -114,6 +117,10 @@ export function normalizePlayAlongSettings(value: unknown): PlayAlongSettings {
         : DEFAULT_PLAY_ALONG_SETTINGS.masterVolume,
     mutedVoices: normalizeMutedVoices(v.mutedVoices),
     accompaniment: normalizeAccompanimentSettings(v.accompaniment),
+    showChordTones:
+      typeof v.showChordTones === 'boolean'
+        ? v.showChordTones
+        : DEFAULT_PLAY_ALONG_SETTINGS.showChordTones,
   }
 }
 
@@ -125,11 +132,13 @@ export function createPlayAlongSettingsStore(backend?: StorageBackend): Store<Pl
   return new Store<PlayAlongSettings>(
     {
       key: 'settings:play-along',
-      // v2 added the chord-progression accompaniment block.
-      version: 2,
+      // v2 added the chord-progression accompaniment block; v3 added the
+      // `showChordTones` fretboard-panel toggle.
+      version: 3,
       defaultValue: DEFAULT_PLAY_ALONG_SETTINGS,
-      // Older data lacks `accompaniment`; normalizing fills it (and every other
-      // field) from the defaults, so a v1 -> v2 upgrade never loses drum prefs.
+      // Older data lacks the newer fields; normalizing fills them (and every
+      // other field) from the defaults, so a v1/v2 -> v3 upgrade never loses
+      // existing drum or accompaniment prefs.
       migrate: (oldData) => normalizePlayAlongSettings(oldData),
     },
     backend,

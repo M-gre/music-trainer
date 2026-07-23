@@ -51,7 +51,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [x] Groove engine: pattern format (16-step grid per drum voice), grooves: rock 8ths, rock 16ths, funk, swing/shuffle, bossa, 12/8 blues, half-time
 - [x] Play-Along page: groove picker, tempo slider, count-in, per-voice mute
 - [x] Chord progression accompaniment: pick key + progression (1-5-6-4, 2-5-1, 12-bar blues, custom degree input), synth pad/comping voice, bars-per-chord setting, current-chord display with next-chord preview
-- [ ] Progression display shows chord tones on fretboard (for bass lines) while playing
+- [x] Progression display shows chord tones on fretboard (for bass lines) while playing
 - [ ] Tempo trainer: auto-increase BPM every N bars
 
 ## M5 — Dexterity

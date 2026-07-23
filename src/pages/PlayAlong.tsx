@@ -15,6 +15,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fretboard, type FretboardMarker } from '../components/Fretboard.tsx'
+import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
+import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
+import { buildChordToneMarkers } from '../lib/chordTones.ts'
+import { prefersFlats } from '../lib/theory/spell.ts'
 import {
   DRUM_VOICES,
   getAudioEngine,
@@ -73,6 +78,9 @@ export function PlayAlong() {
   const compRef = useRef<ChordCompPlayer | null>(null)
   const rafRef = useRef<number | null>(null)
 
+  // Global instrument/tuning for the chord-tones fretboard panel.
+  const { tuning, setTuningId } = useInstrumentSettings()
+
   const [settings] = useState(() => normalizePlayAlongSettings(playAlongSettingsStore.get()))
   const [grooveId, setGrooveId] = useState(settings.grooveId)
   const [tempo, setTempo] = useState(settings.bpm)
@@ -91,6 +99,7 @@ export function PlayAlong() {
   const [accBarsPerChord, setAccBarsPerChord] = useState(settings.accompaniment.barsPerChord)
   const [accStyle, setAccStyle] = useState<CompStyle>(settings.accompaniment.style)
   const [activeChordIndex, setActiveChordIndex] = useState<number | null>(null)
+  const [showChordTones, setShowChordTones] = useState(settings.showChordTones)
 
   const groove = getGroove(grooveId)
   const voices = grooveVoices(groove)
@@ -147,6 +156,7 @@ export function PlayAlong() {
         barsPerChord: accBarsPerChord,
         style: accStyle,
       },
+      showChordTones,
     })
   }, [
     grooveId,
@@ -160,6 +170,7 @@ export function PlayAlong() {
     accCustom,
     accBarsPerChord,
     accStyle,
+    showChordTones,
   ])
 
   // Push accompaniment changes to the live comp player mid-playback.
@@ -293,6 +304,26 @@ export function PlayAlong() {
 
   const beats = Array.from({ length: beatCount }, (_, i) => i)
   const volumePercent = Math.round(masterVolume * 100)
+
+  // Chord-tones panel: the current chord (index 0 when stopped, so the upcoming
+  // first chord is shown) mapped to fretboard markers on the global tuning.
+  const tonePrefer = prefersFlats(accRootPc) ? 'flat' : 'sharp'
+  const currentChordIdx = activeChordIndex ?? 0
+  const currentChord = resolved.chords[currentChordIdx] ?? resolved.chords[0]
+  const nextChord =
+    resolved.chords.length > 0
+      ? resolved.chords[(currentChordIdx + 1) % resolved.chords.length]
+      : undefined
+  const chordToneMarkers = useMemo<FretboardMarker[]>(() => {
+    if (!currentChord) return []
+    return buildChordToneMarkers(
+      { root: currentChord.root, quality: currentChord.quality },
+      tuning,
+      0,
+      12,
+      accRootPc,
+    ).map((m) => ({ string: m.string, fret: m.fret, label: m.degree, variant: m.variant }))
+  }, [currentChord, tuning, accRootPc])
 
   return (
     <div className="tool-page">
@@ -498,6 +529,51 @@ export function PlayAlong() {
                 {chord.symbol}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Chord-tones fretboard panel — build bass lines from the current chord. */}
+        <div className="pa-tones-toggle">
+          <span className="tool-control-label">Show chord tones on fretboard</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showChordTones}
+            className={`pa-toggle${showChordTones ? ' pa-toggle-on' : ''}`}
+            onClick={() => setShowChordTones((prev) => !prev)}
+          >
+            <span className="pa-toggle-track">
+              <span className="pa-toggle-thumb" />
+            </span>
+            <span className="pa-toggle-label">{showChordTones ? 'On' : 'Off'}</span>
+          </button>
+        </div>
+
+        {showChordTones && !resolved.error && currentChord && (
+          <div className="pa-tones">
+            <div className="pa-tones-bar" aria-live="polite">
+              <span className="pa-tones-title">
+                <strong>{currentChord.symbol}</strong> chord tones
+              </span>
+              {nextChord && <span className="pa-tones-next">Next: {nextChord.symbol}</span>}
+            </div>
+            <InstrumentPicker
+              className="pa-tones-picker"
+              value={tuning}
+              onChange={(t) => setTuningId(t.id)}
+            />
+            <Fretboard
+              tuning={tuning}
+              fromFret={0}
+              toFret={12}
+              markers={chordToneMarkers}
+              prefer={tonePrefer}
+              ariaLabel={`${tuning.name} fretboard showing the tones of ${currentChord.symbol}`}
+            />
+            <p className="pa-tones-hint">
+              Roots are highlighted; labels show each note's degree (R, 3/b3, 5, b7…) so you can
+              build a bass line under the changes.
+            </p>
           </div>
         )}
 

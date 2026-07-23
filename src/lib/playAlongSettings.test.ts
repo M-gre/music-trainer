@@ -66,6 +66,7 @@ describe('normalizePlayAlongSettings', () => {
         barsPerChord: 2,
         style: 'stabs',
       },
+      showChordTones: false,
     }
     expect(normalizePlayAlongSettings(value)).toEqual(value)
   })
@@ -84,6 +85,7 @@ describe('normalizePlayAlongSettings', () => {
       masterVolume: 1,
       mutedVoices: [],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
+      showChordTones: DEFAULT_PLAY_ALONG_SETTINGS.showChordTones,
     })
   })
 
@@ -120,6 +122,7 @@ describe('play-along settings store', () => {
       masterVolume: 0.65,
       mutedVoices: ['kick', 'hat-closed'],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
+      showChordTones: false,
     }
     createPlayAlongSettingsStore(backend).set(value)
     expect(createPlayAlongSettingsStore(backend).get()).toEqual(value)
@@ -149,10 +152,45 @@ describe('play-along settings store', () => {
       masterVolume: 0.4,
       mutedVoices: ['snare'],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
+      showChordTones: DEFAULT_PLAY_ALONG_SETTINGS.showChordTones,
     })
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(2)
+    expect(raw && JSON.parse(raw).v).toBe(3)
+  })
+
+  it('migrates v2 data (no showChordTones) by filling in the default', () => {
+    const backend = memoryBackend()
+    // A v2 envelope has the accompaniment block but predates the chord-tones toggle.
+    backend.setItem(
+      'mt:settings:play-along',
+      JSON.stringify({
+        v: 2,
+        data: {
+          grooveId: 'bossa',
+          bpm: 108,
+          countIn: true,
+          masterVolume: 0.7,
+          mutedVoices: ['ride'],
+          accompaniment: {
+            enabled: true,
+            rootPc: 2,
+            progressionId: 'I-V-vi-IV',
+            customDegrees: '1-5-6-4',
+            barsPerChord: 1,
+            style: 'pad',
+          },
+        },
+      }),
+    )
+    const migrated = createPlayAlongSettingsStore(backend).get()
+    // Existing prefs survive; the new toggle takes its default.
+    expect(migrated.grooveId).toBe('bossa')
+    expect(migrated.accompaniment.rootPc).toBe(2)
+    expect(migrated.showChordTones).toBe(DEFAULT_PLAY_ALONG_SETTINGS.showChordTones)
+    // The upgrade is persisted at the new version so it only runs once.
+    const raw = backend.getItem('mt:settings:play-along')
+    expect(raw && JSON.parse(raw).v).toBe(3)
   })
 
   it('normalizes corrupt persisted data back to defaults on read', () => {
