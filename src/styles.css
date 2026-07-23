@@ -309,6 +309,22 @@ a.tool-card:hover {
   fill: var(--text);
 }
 
+.kb-dot-correct circle {
+  fill: #3fae6b;
+}
+
+.kb-dot-correct text {
+  fill: var(--bg);
+}
+
+.kb-dot-incorrect circle {
+  fill: #b8433a;
+}
+
+.kb-dot-incorrect text {
+  fill: var(--text);
+}
+
 /* ---- InstrumentPicker ---- */
 
 .ip-picker {
@@ -626,6 +642,76 @@ a.tool-card:hover {
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fnt-note-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.fnt-note-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.fnt-note-correct {
+  color: var(--bg);
+  background: #3fae6b;
+  border-color: #3fae6b;
+  opacity: 1;
+}
+
+.fnt-note-wrong {
+  color: var(--text);
+  background: #b8433a;
+  border-color: #b8433a;
+  opacity: 1;
+}
+
+.fnt-score {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.fnt-score-item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.8rem 0.5rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.fnt-score-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.fnt-score-sep {
+  color: var(--text-dim);
+  margin: 0 0.1rem;
+}
+
+.fnt-score-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+@media (max-width: 480px) {
+  .fnt-note-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+
 /* ---- Circle of Fifths ---- */
 
 .cf-circle-wrap {
@@ -638,11 +724,6 @@ a.tool-card:hover {
   display: block;
   width: 100%;
   max-width: 26rem;
-/* ---- Staff SVG component ---- */
-
-.st-staff {
-  display: block;
-  width: 100%;
   height: auto;
   user-select: none;
   font-family: inherit;
@@ -758,41 +839,6 @@ a.tool-card:hover {
 }
 
 .cf-scale-chips {
-.st-line,
-.st-ledger {
-  stroke: var(--text-dim);
-  stroke-width: 1.4;
-  stroke-linecap: round;
-}
-
-.st-clef {
-  stroke: var(--text);
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.st-clef-dot {
-  fill: var(--text);
-}
-
-.st-accidental {
-  fill: var(--text);
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.st-note ellipse {
-  fill: var(--text);
-}
-
-.st-note .st-note-hole {
-  fill: var(--bg);
-}
-
-/* ---- Note Reading tool ---- */
-
-.nr-segmented {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
@@ -850,6 +896,94 @@ a.tool-card:hover {
   color: var(--bg);
   background: var(--accent);
   border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cf-play-button:hover {
+  background: #f0b25a;
+}
+
+.cf-play-button:active {
+  background: var(--accent-dim);
+}
+
+.cf-play-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cf-play-button-small {
+  align-self: stretch;
+  min-height: 2rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 480px) {
+  .cf-label {
+    font-size: 12px;
+  }
+  .cf-label-minor {
+    font-size: 10px;
+  }
+  .cf-signature {
+    font-size: 8px;
+  }
+}
+
+
+/* ---- Staff SVG component ---- */
+
+.st-staff {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  font-family: inherit;
+}
+
+.st-line,
+.st-ledger {
+  stroke: var(--text-dim);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.st-clef {
+  stroke: var(--text);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.st-clef-dot {
+  fill: var(--text);
+}
+
+.st-accidental {
+  fill: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.st-note ellipse {
+  fill: var(--text);
+}
+
+.st-note .st-note-hole {
+  fill: var(--bg);
+}
+
+/* ---- Note Reading tool ---- */
+
+.nr-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
 .nr-segment {
   flex: 1 1 4rem;
   min-height: 2.5rem;
@@ -864,30 +998,6 @@ a.tool-card:hover {
   font-family: inherit;
 }
 
-.fnt-note-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
-.fnt-note-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.fnt-note-correct {
-  color: var(--bg);
-  background: #3fae6b;
-  border-color: #3fae6b;
-  opacity: 1;
-}
-
-.fnt-note-wrong {
-  color: var(--text);
-  background: #b8433a;
-  border-color: #b8433a;
-  opacity: 1;
-}
-
-.fnt-score {
 .nr-segment:hover {
   border-color: var(--accent-dim);
 }
@@ -945,34 +1055,18 @@ a.tool-card:hover {
   gap: 0.75rem;
 }
 
-.fnt-score-item {
 .nr-score {
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.2rem;
-  padding: 0.8rem 0.5rem;
   padding: 0.75rem 0.5rem;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 10px;
 }
 
-.fnt-score-value {
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--accent);
-}
-
-.fnt-score-sep {
-  color: var(--text-dim);
-  margin: 0 0.1rem;
-}
-
-.fnt-score-label {
-  font-size: 0.72rem;
-  font-weight: 600;
 .nr-score-value {
   font-size: 1.6rem;
   font-weight: 700;
@@ -987,38 +1081,6 @@ a.tool-card:hover {
   color: var(--text-dim);
 }
 
-@media (max-width: 480px) {
-  .fnt-note-grid {
-    grid-template-columns: repeat(4, 1fr);
-.cf-play-button:hover {
-  background: #f0b25a;
-}
-
-.cf-play-button:active {
-  background: var(--accent-dim);
-}
-
-.cf-play-button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.cf-play-button-small {
-  align-self: stretch;
-  min-height: 2rem;
-  padding: 0.3rem 0.6rem;
-  font-size: 0.82rem;
-}
-
-@media (max-width: 480px) {
-  .cf-label {
-    font-size: 12px;
-  }
-  .cf-label-minor {
-    font-size: 10px;
-  }
-  .cf-signature {
-    font-size: 8px;
 .nr-answer {
   min-height: 3rem;
 }

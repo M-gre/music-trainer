@@ -3,6 +3,7 @@ import { Home } from './pages/Home.tsx'
 import { NotFound } from './pages/NotFound.tsx'
 import { Metronome } from './pages/Metronome.tsx'
 import { FretboardNoteTrainer } from './pages/FretboardNoteTrainer.tsx'
+import { KeyboardNoteTrainer } from './pages/KeyboardNoteTrainer.tsx'
 import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
 import { NoteReading } from './pages/NoteReading.tsx'
 
@@ -33,6 +34,7 @@ export const TOOLS: Tool[] = [
     title: 'Keyboard Note Trainer',
     description: 'Learn the keys and their names across octaves.',
     tags: ['piano'],
+    page: () => <KeyboardNoteTrainer />,
   },
   {
     route: '/chords',
