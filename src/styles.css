@@ -17,6 +17,21 @@
   box-sizing: border-box;
 }
 
+/* Mobile/touch: every interactive control gets `touch-action: manipulation`
+   so a tap fires immediately (no 300ms double-tap-zoom delay). Applied once,
+   globally, so no individual control can regress by omitting it; components
+   that need a stricter value can still override. */
+button,
+a,
+select,
+input,
+textarea,
+summary,
+label,
+[role='button'] {
+  touch-action: manipulation;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -40,6 +55,9 @@ body {
 }
 
 .app-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--accent);
   text-decoration: none;
   font-size: 1.3rem;
@@ -538,6 +556,7 @@ a.tool-card:hover {
 
 .ip-select {
   appearance: none;
+  min-height: 44px;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -774,7 +793,7 @@ a.tool-card:hover {
 .mn-stepper {
   flex: 1 1 0;
   padding: 0.5rem 0;
-  min-height: 2.5rem;
+  min-height: 44px;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text);
@@ -795,6 +814,7 @@ a.tool-card:hover {
 
 .mn-slider {
   width: 100%;
+  min-height: 44px;
   accent-color: var(--accent);
   cursor: pointer;
 }
@@ -807,7 +827,7 @@ a.tool-card:hover {
 
 .mn-segment {
   flex: 1 1 3.5rem;
-  min-height: 2.5rem;
+  min-height: 44px;
   padding: 0.4rem 0.5rem;
   font-size: 0.85rem;
   font-weight: 600;
@@ -1019,7 +1039,7 @@ a.tool-card:hover {
 .pa-stepper {
   flex: 1 1 0;
   padding: 0.5rem 0;
-  min-height: 2.5rem;
+  min-height: 44px;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text);
@@ -1041,6 +1061,7 @@ a.tool-card:hover {
 
 .pa-slider {
   width: 100%;
+  min-height: 44px;
   accent-color: var(--accent);
   cursor: pointer;
 }
@@ -1596,7 +1617,7 @@ a.tool-card:hover {
 }
 
 .ns-reset {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0.3rem 0.8rem;
   touch-action: manipulation;
   background: var(--bg);
@@ -2183,7 +2204,7 @@ a.tool-card:hover {
 }
 
 .cf-play-button {
-  min-height: 2.5rem;
+  min-height: 44px;
   padding: 0.4rem 1rem;
   font-size: 0.9rem;
   font-weight: 700;
@@ -2210,7 +2231,7 @@ a.tool-card:hover {
 
 .cf-play-button-small {
   align-self: stretch;
-  min-height: 2rem;
+  min-height: 44px;
   padding: 0.3rem 0.6rem;
   font-size: 0.82rem;
 }
@@ -2308,7 +2329,7 @@ a.tool-card:hover {
 
 .nr-segment {
   flex: 1 1 4rem;
-  min-height: 2.5rem;
+  min-height: 44px;
   padding: 0.4rem 0.5rem;
   font-size: 0.85rem;
   font-weight: 600;
@@ -2454,7 +2475,7 @@ a.tool-card:hover {
 }
 
 .se-root {
-  min-height: 2.6rem;
+  min-height: 44px;
   padding: 0.4rem 0;
   font-size: 0.9rem;
   font-weight: 700;
@@ -2478,6 +2499,7 @@ a.tool-card:hover {
 }
 
 .se-select {
+  min-height: 44px;
   padding: 0.55rem 0.7rem;
   font-size: 0.95rem;
   font-weight: 600;
@@ -2500,7 +2522,7 @@ a.tool-card:hover {
 
 .se-segment {
   flex: 1 1 0;
-  min-height: 2.5rem;
+  min-height: 44px;
   padding: 0.4rem 0.6rem;
   font-size: 0.85rem;
   font-weight: 600;
@@ -2658,7 +2680,7 @@ a.tool-card:hover {
 
 .se-range-toggle {
   flex: 0 0 auto;
-  min-height: 2.2rem;
+  min-height: 44px;
 }
 
 @media (max-width: 480px) {
@@ -4325,6 +4347,7 @@ a.tool-card:hover {
 
 .set-slider {
   flex: 1 1 auto;
+  min-height: 44px;
   accent-color: var(--accent);
   cursor: pointer;
   touch-action: manipulation;
