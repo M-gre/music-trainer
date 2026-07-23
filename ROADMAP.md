@@ -21,6 +21,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 - [x] Fretboard Note Trainer: "find note X on string Y" and "name the highlighted fret" quiz modes, fret-range and string filters, score streak, uses Fretboard component with the selected instrument/tuning (bass or guitar)
 - [x] Keyboard Note Trainer: same quiz modes on the Keyboard component
+- [ ] Note trainer expansion (fretboard + keyboard): freely adjustable quiz range (custom fret span min/max on fretboard, custom key range on keyboard — not just presets); new quiz mode "find ALL instances": every position matching the prompted note in the selected range must be clicked, found ones stay marked, complete when all are found (fretboard: all strings/frets in range; keyboard: all octaves in range)
 - [ ] Progress stats per note (accuracy, response time) persisted via storage lib; weakest-notes-first question picking
 - [x] Note Reading: render single notes on a staff (SVG, bass + treble clef), answer via fretboard/keyboard/name buttons, ledger lines, key-signature-aware naming
 - [ ] Note Reading: timed streak mode and range/clef settings
