@@ -161,8 +161,59 @@ describe('instruments', () => {
   it('groups tunings by instrument with unique ids', () => {
     expect(BASS_TUNINGS.every((t) => t.instrument === 'bass')).toBe(true)
     expect(GUITAR_TUNINGS.every((t) => t.instrument === 'guitar')).toBe(true)
-    expect(tuningsFor('guitar').map((t) => t.strings.length)).toEqual([6, 6, 6, 7])
+    expect(tuningsFor('guitar').map((t) => t.strings.length)).toEqual([6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 8])
     expect(new Set(TUNINGS.map((t) => t.id)).size).toBe(TUNINGS.length)
     expect(() => getTuning('banjo-5')).toThrow()
+  })
+
+  it('sorts tuningsFor by string count ascending, groups stay contiguous', () => {
+    const bassCounts = tuningsFor('bass').map((t) => t.strings.length)
+    const guitarCounts = tuningsFor('guitar').map((t) => t.strings.length)
+    expect(bassCounts).toEqual([...bassCounts].sort((a, b) => a - b))
+    expect(guitarCounts).toEqual([...guitarCounts].sort((a, b) => a - b))
+  })
+
+  it('adds new 4-string bass tunings with correct low string and full pitches', () => {
+    expect(getTuning('bass-4-bead').strings.length).toBe(4)
+    expect(getTuning('bass-4-bead').strings).toEqual(
+      ['B0', 'E1', 'A1', 'D2'].map((n) => nameToMidi(n)),
+    )
+    expect(getTuning('bass-4-d-standard').strings).toEqual(
+      ['D1', 'G1', 'C2', 'F2'].map((n) => nameToMidi(n)),
+    )
+    expect(getTuning('bass-4-half-step-down').strings).toEqual(
+      ['Eb1', 'Ab1', 'Db2', 'Gb2'].map((n) => nameToMidi(n)),
+    )
+    expect(getTuning('bass-4-tenor').strings.length).toBe(4)
+    expect(getTuning('bass-4-tenor').strings).toEqual(['A1', 'D2', 'G2', 'C3'].map((n) => nameToMidi(n)))
+  })
+
+  it('adds new 6-string and 8-string guitar tunings with correct pitches', () => {
+    expect(getTuning('guitar-6-eb-standard').strings).toEqual(
+      ['Eb2', 'Ab2', 'Db3', 'Gb3', 'Bb3', 'Eb4'].map((n) => nameToMidi(n)),
+    )
+    expect(getTuning('guitar-6-d-standard').strings).toEqual(
+      ['D2', 'G2', 'C3', 'F3', 'A3', 'D4'].map((n) => nameToMidi(n)),
+    )
+    expect(getTuning('guitar-6-drop-c').strings).toEqual(
+      ['C2', 'G2', 'C3', 'F3', 'A3', 'D4'].map((n) => nameToMidi(n)),
+    )
+    // Open G's lowest string is D2.
+    expect(getTuning('guitar-6-open-g').strings[0]).toBe(nameToMidi('D2'))
+    expect(getTuning('guitar-6-open-g').strings).toEqual(
+      ['D2', 'G2', 'D3', 'G3', 'B3', 'D4'].map((n) => nameToMidi(n)),
+    )
+    expect(getTuning('guitar-6-open-d').strings).toEqual(
+      ['D2', 'A2', 'D3', 'F#3', 'A3', 'D4'].map((n) => nameToMidi(n)),
+    )
+    expect(getTuning('guitar-6-open-e').strings).toEqual(
+      ['E2', 'B2', 'E3', 'G#3', 'B3', 'E4'].map((n) => nameToMidi(n)),
+    )
+    // 8-string's lowest string is F#1.
+    expect(getTuning('guitar-8').strings.length).toBe(8)
+    expect(getTuning('guitar-8').strings[0]).toBe(nameToMidi('F#1'))
+    expect(getTuning('guitar-8').strings).toEqual(
+      ['F#1', 'B1', 'E2', 'A2', 'D3', 'G3', 'B3', 'E4'].map((n) => nameToMidi(n)),
+    )
   })
 })
