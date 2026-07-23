@@ -23,7 +23,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [ ] Keyboard Note Trainer: same quiz modes on the Keyboard component
 - [ ] Progress stats per note (accuracy, response time) persisted via storage lib; weakest-notes-first question picking
 - [x] Note Reading: render single notes on a staff (SVG, bass + treble clef), answer via fretboard/keyboard/name buttons, ledger lines, key-signature-aware naming
-- [ ] Note Reading: timed streak mode and range/clef settings
+- [x] Note Reading: timed streak mode and range/clef settings
 
 ## M2 — Chords, scales & theory
 
