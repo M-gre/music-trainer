@@ -65,6 +65,8 @@ import {
   reviewKey,
   type SrsData,
 } from '../lib/spacedRepetition.ts'
+import { useAnswerShortcuts } from '../hooks/useAnswerShortcuts.ts'
+import { shortcutLabel } from '../lib/answerShortcuts.ts'
 
 const PITCH_CLASSES: PitchClass[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
@@ -339,6 +341,22 @@ export function FretboardNoteTrainer() {
   const findAllClickable = settings.mode === 'findAll' && !faProgress.complete
   const openStringName = (index: number): string => midiToName(fretMidi(tuning, index, 0), prefer)
 
+  // In "Name the note" mode, number keys 1–9 pick the first nine note buttons
+  // (C … G♯); the remaining notes stay tap-only. Disabled once answered or in
+  // the tap-the-fret modes, which have no fixed button order to bind.
+  const nameMode = settings.mode === 'name'
+  const selectNote = useCallback(
+    (index: number) => {
+      const pc = PITCH_CLASSES[index]
+      if (pc !== undefined) handlePcClick(pc)
+    },
+    [handlePcClick],
+  )
+  useAnswerShortcuts({
+    optionCount: nameMode && !answered ? PITCH_CLASSES.length : 0,
+    onSelect: selectNote,
+  })
+
   const resetStats = useCallback(() => {
     fretboardStatsStore.clear()
     setNoteStats(emptyNoteStats())
@@ -369,7 +387,7 @@ export function FretboardNoteTrainer() {
       <div className="tool-controls">
         <div className="tool-control-group">
           <span className="tool-control-label">Mode</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Quiz mode">
             {MODE_OPTIONS.map((option) => (
               <button
                 key={option.value}
@@ -386,7 +404,7 @@ export function FretboardNoteTrainer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Fret range</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Fret range preset">
             {FRET_RANGE_PRESETS.map((preset) => {
               const active = settings.fromFret === preset.from && settings.toFret === preset.to
               return (
@@ -443,7 +461,7 @@ export function FretboardNoteTrainer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Accidentals</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Accidentals">
             {(['sharp', 'flat'] as const).map((acc) => (
               <button
                 key={acc}
@@ -460,7 +478,7 @@ export function FretboardNoteTrainer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Strings</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Strings included in the quiz">
             {Array.from({ length: stringCount }, (_, i) => stringCount - 1 - i).map((s) => {
               const on = includedStrings.includes(s)
               return (
@@ -480,7 +498,7 @@ export function FretboardNoteTrainer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Focus</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Focus weak notes">
             <button
               type="button"
               className={`mn-segment${settings.focusWeak ? ' mn-segment-active' : ''}`}
@@ -529,14 +547,21 @@ export function FretboardNoteTrainer() {
             const cls = ['fnt-note-btn']
             if (isCorrect) cls.push('fnt-note-correct')
             if (isWrongChoice) cls.push('fnt-note-wrong')
+            const key = shortcutLabel(pc)
             return (
               <button
                 key={pc}
                 type="button"
                 className={cls.join(' ')}
                 disabled={answered}
+                title={key ? `Shortcut: press ${key}` : undefined}
                 onClick={() => handlePcClick(pc)}
               >
+                {key && (
+                  <span className="sc-key" aria-hidden="true">
+                    {key}
+                  </span>
+                )}
                 {pcToName(pc, prefer)}
               </button>
             )

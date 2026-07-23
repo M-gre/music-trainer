@@ -60,6 +60,8 @@ import {
   reviewKey,
   type SrsData,
 } from '../lib/spacedRepetition.ts'
+import { useAnswerShortcuts } from '../hooks/useAnswerShortcuts.ts'
+import { shortcutLabel } from '../lib/answerShortcuts.ts'
 
 const PITCH_CLASSES: PitchClass[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
@@ -322,6 +324,22 @@ export function KeyboardNoteTrainer() {
   const findClickable = settings.mode === 'find' && !answered
   const findAllClickable = settings.mode === 'findAll' && !faProgress.complete
 
+  // In "Name the key" mode, number keys 1–9 pick the first nine note buttons
+  // (C … G♯); the remaining notes stay tap-only. Disabled once answered or in
+  // the tap-the-key modes, which have no fixed button order to bind.
+  const nameMode = settings.mode === 'name'
+  const selectNote = useCallback(
+    (index: number) => {
+      const pc = PITCH_CLASSES[index]
+      if (pc !== undefined) handlePcClick(pc)
+    },
+    [handlePcClick],
+  )
+  useAnswerShortcuts({
+    optionCount: nameMode && !answered ? PITCH_CLASSES.length : 0,
+    onSelect: selectNote,
+  })
+
   const resetStats = useCallback(() => {
     keyboardStatsStore.clear()
     setNoteStats(emptyNoteStats())
@@ -350,7 +368,7 @@ export function KeyboardNoteTrainer() {
       <div className="tool-controls">
         <div className="tool-control-group">
           <span className="tool-control-label">Mode</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Quiz mode">
             {MODE_OPTIONS.map((option) => (
               <button
                 key={option.value}
@@ -367,7 +385,7 @@ export function KeyboardNoteTrainer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Octave range</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Octave range preset">
             {OCTAVE_RANGE_PRESETS.map((preset) => {
               const active =
                 settings.fromOctave === preset.fromOctave && settings.toOctave === preset.toOctave
@@ -429,7 +447,7 @@ export function KeyboardNoteTrainer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Accidentals</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Accidentals">
             {(['sharp', 'flat'] as const).map((acc) => (
               <button
                 key={acc}
@@ -446,7 +464,7 @@ export function KeyboardNoteTrainer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Focus</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Focus weak notes">
             <button
               type="button"
               className={`mn-segment${settings.focusWeak ? ' mn-segment-active' : ''}`}
@@ -489,14 +507,21 @@ export function KeyboardNoteTrainer() {
             const cls = ['fnt-note-btn']
             if (isCorrect) cls.push('fnt-note-correct')
             if (isWrongChoice) cls.push('fnt-note-wrong')
+            const key = shortcutLabel(pc)
             return (
               <button
                 key={pc}
                 type="button"
                 className={cls.join(' ')}
                 disabled={answered}
+                title={key ? `Shortcut: press ${key}` : undefined}
                 onClick={() => handlePcClick(pc)}
               >
+                {key && (
+                  <span className="sc-key" aria-hidden="true">
+                    {key}
+                  </span>
+                )}
                 {pcToName(pc, prefer)}
               </button>
             )

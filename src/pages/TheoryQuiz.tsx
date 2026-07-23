@@ -28,6 +28,8 @@ import {
 } from '../lib/theoryQuiz.ts'
 import { normalizeSrsData, qualityFromOutcome, reviewKey, type SrsData } from '../lib/spacedRepetition.ts'
 import { recordPractice } from '../lib/practiceLog.ts'
+import { useAnswerShortcuts } from '../hooks/useAnswerShortcuts.ts'
+import { shortcutLabel } from '../lib/answerShortcuts.ts'
 
 /** How long the answer stays on screen before auto-advancing. */
 const ADVANCE_MS_CORRECT = 900
@@ -131,6 +133,22 @@ export function TheoryQuiz() {
   }
 
   const answered = result !== null
+  const options = question?.options ?? []
+
+  // Number keys 1–N pick an answer while unanswered; Enter advances early
+  // once the current answer is showing (there is always a pending auto-advance).
+  const selectOption = useCallback(
+    (index: number) => {
+      const option = options[index]
+      if (option !== undefined) submit(option)
+    },
+    [options, submit],
+  )
+  useAnswerShortcuts({
+    optionCount: answered ? 0 : options.length,
+    onSelect: selectOption,
+    onNext: answered ? advance : undefined,
+  })
 
   return (
     <div className="tool-page">
@@ -178,25 +196,36 @@ export function TheoryQuiz() {
 
       {question && (
         <div className="tq-option-grid" role="group" aria-label="Answer options">
-          {question.options.map((option) => {
+          {question.options.map((option, index) => {
             const isCorrect = answered && option === question.answer
             const isWrongChoice = answered && result?.answer === option && !result.correct
             const cls = ['tq-option-btn']
             if (isCorrect) cls.push('tq-option-correct')
             if (isWrongChoice) cls.push('tq-option-wrong')
+            const key = shortcutLabel(index)
             return (
               <button
                 key={option}
                 type="button"
                 className={cls.join(' ')}
                 disabled={answered}
+                title={key ? `Shortcut: press ${key}` : undefined}
                 onClick={() => submit(option)}
               >
+                {key && (
+                  <span className="sc-key" aria-hidden="true">
+                    {key}
+                  </span>
+                )}
                 {option}
               </button>
             )
           })}
         </div>
+      )}
+
+      {question && (
+        <p className="sc-hint">Tip: press 1–{question.options.length} to answer, Enter for next.</p>
       )}
 
       <div className="tq-score">

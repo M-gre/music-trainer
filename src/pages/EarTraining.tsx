@@ -28,6 +28,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getAudioEngine } from '../lib/audio/index.ts'
+import { useAnswerShortcuts } from '../hooks/useAnswerShortcuts.ts'
+import { shortcutLabel } from '../lib/answerShortcuts.ts'
 import { emptyStats, QuizSession, type QuizStats } from '../lib/quiz.ts'
 import {
   accumulateStat,
@@ -379,6 +381,22 @@ function IntervalTrainer({ fixedSettings, onAnswer }: IntervalTrainerProps = {})
 
   const enabledSorted = useMemo(() => [...settings.enabled].sort((a, b) => a - b), [settings.enabled])
 
+  // Number keys 1–N pick an answer while unanswered; Enter jumps to the next
+  // question once a wrong answer's "compare" panel is showing (a correct
+  // answer auto-advances, so Enter is only wired for the wrong case).
+  const selectAnswer = useCallback(
+    (index: number) => {
+      const semitones = enabledSorted[index]
+      if (semitones !== undefined) submit(semitones)
+    },
+    [enabledSorted, submit],
+  )
+  useAnswerShortcuts({
+    optionCount: answered ? 0 : enabledSorted.length,
+    onSelect: selectAnswer,
+    onNext: answered && !correct ? advance : undefined,
+  })
+
   const setPlayback = (value: PlaybackSetting): void =>
     setSettings((s) => ({ ...s, playback: value }))
 
@@ -462,27 +480,37 @@ function IntervalTrainer({ fixedSettings, onAnswer }: IntervalTrainerProps = {})
       </div>
 
       <div className="et-answers" role="group" aria-label="Interval answers">
-        {enabledSorted.map((semitones) => {
+        {enabledSorted.map((semitones, index) => {
           const interval = intervalBySemitones(semitones)
           const isCorrect = answered && question?.semitones === semitones
           const isWrongChoice = answered && !correct && answer === semitones
           const cls = ['et-answer']
           if (isCorrect) cls.push('et-answer-correct')
           if (isWrongChoice) cls.push('et-answer-wrong')
+          const key = shortcutLabel(index)
           return (
             <button
               key={semitones}
               type="button"
               className={cls.join(' ')}
               disabled={answered}
+              title={key ? `${interval.name} — shortcut ${key}` : interval.name}
               onClick={() => submit(semitones)}
             >
+              {key && (
+                <span className="sc-key" aria-hidden="true">
+                  {key}
+                </span>
+              )}
               <span className="et-answer-short">{interval.short}</span>
               <span className="et-answer-full">{interval.name}</span>
             </button>
           )
         })}
       </div>
+      {!answered && enabledSorted.length > 0 && (
+        <p className="sc-hint">Tip: press 1–{Math.min(enabledSorted.length, 9)} to answer.</p>
+      )}
 
       {answered && !correct && question && (
         <div className="et-compare" role="group" aria-label="Replay to compare">
@@ -725,6 +753,19 @@ function ChordQualityTrainer({ fixedSettings, onAnswer }: ChordQualityTrainerPro
 
   const enabledSorted = useMemo(() => sortQualityIds(settings.enabled), [settings.enabled])
 
+  const selectAnswer = useCallback(
+    (index: number) => {
+      const id = enabledSorted[index]
+      if (id !== undefined) submit(id)
+    },
+    [enabledSorted, submit],
+  )
+  useAnswerShortcuts({
+    optionCount: answered ? 0 : enabledSorted.length,
+    onSelect: selectAnswer,
+    onNext: answered && !correct ? advance : undefined,
+  })
+
   const applyPreset = (qualityIds: string[]): void =>
     setSettings((s) => ({ ...s, enabled: [...qualityIds] }))
 
@@ -807,27 +848,37 @@ function ChordQualityTrainer({ fixedSettings, onAnswer }: ChordQualityTrainerPro
       </div>
 
       <div className="et-answers" role="group" aria-label="Chord quality answers">
-        {enabledSorted.map((id) => {
+        {enabledSorted.map((id, index) => {
           const quality = getChordQuality(id)
           const isCorrect = answered && question?.qualityId === id
           const isWrongChoice = answered && !correct && answer === id
           const cls = ['et-answer']
           if (isCorrect) cls.push('et-answer-correct')
           if (isWrongChoice) cls.push('et-answer-wrong')
+          const key = shortcutLabel(index)
           return (
             <button
               key={id}
               type="button"
               className={cls.join(' ')}
               disabled={answered}
+              title={key ? `${quality.name} — shortcut ${key}` : quality.name}
               onClick={() => submit(id)}
             >
+              {key && (
+                <span className="sc-key" aria-hidden="true">
+                  {key}
+                </span>
+              )}
               <span className="et-answer-short">{qualityShort(quality)}</span>
               <span className="et-answer-full">{quality.name}</span>
             </button>
           )
         })}
       </div>
+      {!answered && enabledSorted.length > 0 && (
+        <p className="sc-hint">Tip: press 1–{Math.min(enabledSorted.length, 9)} to answer.</p>
+      )}
 
       {answered && !correct && question && (
         <div className="et-compare" role="group" aria-label="Replay to compare">
@@ -1140,6 +1191,19 @@ function ScaleTrainer({ fixedSettings, onAnswer }: ScaleTrainerProps = {}) {
 
   const enabledSorted = useMemo(() => sortScaleIds(settings.enabled), [settings.enabled])
 
+  const selectAnswer = useCallback(
+    (index: number) => {
+      const id = enabledSorted[index]
+      if (id !== undefined) submit(id)
+    },
+    [enabledSorted, submit],
+  )
+  useAnswerShortcuts({
+    optionCount: answered ? 0 : enabledSorted.length,
+    onSelect: selectAnswer,
+    onNext: answered && !correct ? advance : undefined,
+  })
+
   const applyPreset = (scaleIds: string[]): void => setSettings((s) => ({ ...s, enabled: [...scaleIds] }))
 
   const toggle = (scaleId: string): void =>
@@ -1205,27 +1269,37 @@ function ScaleTrainer({ fixedSettings, onAnswer }: ScaleTrainerProps = {}) {
       </div>
 
       <div className="et-answers" role="group" aria-label="Scale answers">
-        {enabledSorted.map((id) => {
+        {enabledSorted.map((id, index) => {
           const scale = getScale(id)
           const isCorrect = answered && question?.scaleId === id
           const isWrongChoice = answered && !correct && answer === id
           const cls = ['et-answer']
           if (isCorrect) cls.push('et-answer-correct')
           if (isWrongChoice) cls.push('et-answer-wrong')
+          const key = shortcutLabel(index)
           return (
             <button
               key={id}
               type="button"
               className={cls.join(' ')}
               disabled={answered}
+              title={key ? `${scaleLabel(scale)} — shortcut ${key}` : scaleLabel(scale)}
               onClick={() => submit(id)}
             >
+              {key && (
+                <span className="sc-key" aria-hidden="true">
+                  {key}
+                </span>
+              )}
               <span className="et-answer-short">{scaleShort(scale)}</span>
               <span className="et-answer-full">{scaleLabel(scale)}</span>
             </button>
           )
         })}
       </div>
+      {!answered && enabledSorted.length > 0 && (
+        <p className="sc-hint">Tip: press 1–{Math.min(enabledSorted.length, 9)} to answer.</p>
+      )}
 
       {answered && !correct && question && (
         <div className="et-compare" role="group" aria-label="Replay to compare">
@@ -1559,6 +1633,15 @@ function MelodicEchoTrainer({ fixedSettings, onAnswer }: MelodicEchoTrainerProps
   const setRootPc = (rootPc: PitchClass): void => setSettings((s) => ({ ...s, rootPc }))
   const setScaleType = (scaleType: EchoScaleType): void => setSettings((s) => ({ ...s, scaleType }))
   const setInputMode = (inputMode: EchoInputMode): void => setSettings((s) => ({ ...s, inputMode }))
+
+  // Melodic echo is note-by-note input (no multiple choice), so only Enter is
+  // bound: it advances to the next phrase once the current one is complete.
+  const noop = useCallback(() => {}, [])
+  useAnswerShortcuts({
+    optionCount: 0,
+    onSelect: noop,
+    onNext: done ? advance : undefined,
+  })
 
   const total = question ? phraseLength(question) : 0
   const referenceMidi = question?.midis[0] ?? null
