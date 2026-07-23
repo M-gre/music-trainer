@@ -4,6 +4,7 @@ import { NotFound } from './pages/NotFound.tsx'
 import { Metronome } from './pages/Metronome.tsx'
 import { FretboardNoteTrainer } from './pages/FretboardNoteTrainer.tsx'
 import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
+import { NoteReading } from './pages/NoteReading.tsx'
 
 export interface Tool {
   route: string
@@ -57,6 +58,7 @@ export const TOOLS: Tool[] = [
     title: 'Note Reading',
     description: 'Sight-reading drills in bass and treble clef.',
     tags: ['bass', 'piano'],
+    page: () => <NoteReading />,
   },
   {
     route: '/ear-training',
