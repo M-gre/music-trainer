@@ -2466,7 +2466,21 @@ a.tool-card:hover {
 .dx-patterns {
   display: flex;
   flex-direction: column;
+  gap: 0.9rem;
+}
+
+.dx-pattern-category {
+  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
+}
+
+.dx-pattern-category-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
 }
 
 .dx-pattern {

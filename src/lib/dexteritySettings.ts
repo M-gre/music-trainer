@@ -1,12 +1,24 @@
 /**
  * Persisted Dexterity-tool preferences (chosen pattern, starting fret, tempo,
- * notes-per-beat, and the auto-advance range). Mirrors `metronomeSettings.ts`:
- * a versioned `Store`, a factory (tests inject `memoryBackend()`), and a pure
- * `normalizeDexteritySettings` that coerces any loaded/typed value into the
- * ranges the UI supports — kept pure so it is unit-tested without React.
+ * notes-per-beat, the auto-advance range, and playback direction). Mirrors
+ * `metronomeSettings.ts`: a versioned `Store`, a factory (tests inject
+ * `memoryBackend()`), and a pure `normalizeDexteritySettings` that coerces any
+ * loaded/typed value into the ranges the UI supports — kept pure so it is
+ * unit-tested without React.
+ *
+ * v2 added `direction` (forward / reverse / forward-then-reverse playback,
+ * independent of a pattern's own traversal); v1 data is migrated by filling
+ * it in with the default (`normalizeDexteritySettings` handles this).
  */
 
-import { BUILTIN_PATTERNS, clampInt, DEFAULT_PATTERN_ID } from './exercises.ts'
+import {
+  BUILTIN_PATTERNS,
+  clampInt,
+  DEFAULT_DIRECTION,
+  DEFAULT_PATTERN_ID,
+  DIRECTIONS,
+  type Direction,
+} from './exercises.ts'
 import { Store, type StorageBackend } from './storage.ts'
 
 /** Tempo range offered by the slider/steppers (beats per minute). */
@@ -35,6 +47,8 @@ export interface DexteritySettings {
   advanceMin: number
   /** Highest fret of the auto-advance span. */
   advanceMax: number
+  /** Playback direction: forward, reverse, or forward-then-reverse. */
+  direction: Direction
 }
 
 export const DEFAULT_DEXTERITY_SETTINGS: DexteritySettings = {
@@ -45,6 +59,7 @@ export const DEFAULT_DEXTERITY_SETTINGS: DexteritySettings = {
   autoAdvance: false,
   advanceMin: 1,
   advanceMax: 12,
+  direction: DEFAULT_DIRECTION,
 }
 
 /** Clamp a tempo into `[MIN_BPM, MAX_BPM]`; NaN falls back to the default. */
@@ -85,7 +100,20 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
   const advanceMin = Math.min(rawMin, rawMax)
   const advanceMax = Math.max(rawMin, rawMax)
 
-  return { patternId, position, bpm, notesPerBeat, autoAdvance, advanceMin, advanceMax }
+  const direction: Direction =
+    typeof v.direction === 'string' && (DIRECTIONS as readonly string[]).includes(v.direction)
+      ? (v.direction as Direction)
+      : DEFAULT_DEXTERITY_SETTINGS.direction
+
+  return { patternId, position, bpm, notesPerBeat, autoAdvance, advanceMin, advanceMax, direction }
+}
+
+/**
+ * Migrate persisted data from an older schema version. v1 lacked `direction`;
+ * `normalizeDexteritySettings` fills it in with the default (`forward`).
+ */
+export function migrateDexteritySettings(oldData: unknown): DexteritySettings {
+  return normalizeDexteritySettings(oldData)
 }
 
 /** Build a dexterity-settings store (tests pass `memoryBackend()`). */
@@ -93,8 +121,9 @@ export function createDexteritySettingsStore(backend?: StorageBackend): Store<De
   return new Store<DexteritySettings>(
     {
       key: 'settings:dexterity',
-      version: 1,
+      version: 2,
       defaultValue: DEFAULT_DEXTERITY_SETTINGS,
+      migrate: migrateDexteritySettings,
     },
     backend,
   )

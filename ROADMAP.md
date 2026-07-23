@@ -57,7 +57,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 ## M5 — Dexterity
 
 - [x] Exercise engine: patterns as fret/finger sequences, rendered on Fretboard with numbered order + metronome sync
-- [ ] Bass/guitar exercises: spider walk (1-2-3-4 permutations), string crossing, position shifts — tuning-aware so they render on any fretted instrument
+- [x] Bass/guitar exercises: spider walk (1-2-3-4 permutations), string crossing, position shifts — tuning-aware so they render on any fretted instrument
 - [ ] Permutation generator: all 24 finger orderings, random daily set
 - [ ] Piano exercises: 5-finger patterns, scale fingerings with correct finger numbers displayed on Keyboard
 
