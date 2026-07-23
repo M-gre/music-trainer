@@ -49,6 +49,13 @@ import {
   type ExerciseStep,
 } from '../lib/exercises.ts'
 import { midiToName } from '../lib/theory/notes.ts'
+import {
+  ALL_PERMUTATION_PATTERNS,
+  dailyPermutationSet,
+  dateKey,
+  getPermutationPattern,
+  isPermutationId,
+} from '../lib/permutations.ts'
 
 const NOTES_PER_BEAT_LABELS: Record<number, string> = {
   1: 'Quarter',
@@ -89,8 +96,16 @@ export function Dexterity() {
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null)
   const [activeLoop, setActiveLoop] = useState(0)
 
-  const pattern = useMemo(() => getPattern(patternId), [patternId])
+  const pattern = useMemo(() => getPermutationPattern(patternId) ?? getPattern(patternId), [patternId])
   const patternGroups = useMemo(() => patternsByCategory(), [])
+
+  // "Today" is read from the wall clock once, here at the page level, and
+  // handed to the pure daily-set generator as a plain date string — the
+  // permutation lib itself never touches `Date.now()`/`new Date()` so it stays
+  // deterministic and unit-testable.
+  const today = useMemo(() => new Date(), [])
+  const todayKey = useMemo(() => dateKey(today), [today])
+  const dailySet = useMemo(() => dailyPermutationSet(todayKey), [todayKey])
   const range = useMemo(
     () => (autoAdvance ? { min: Math.min(advanceMin, advanceMax), max: Math.max(advanceMin, advanceMax) } : undefined),
     [autoAdvance, advanceMin, advanceMax],
@@ -298,6 +313,50 @@ export function Dexterity() {
                 ),
             )}
           </div>
+        </div>
+
+        <div className="tool-control-group dx-pattern-group">
+          <span className="tool-control-label">Daily permutations — {todayKey}</span>
+          <div className="dx-patterns" role="radiogroup" aria-label="Today's permutation set">
+            <div className="dx-pattern-category">
+              <span className="dx-pattern-category-label">
+                Today&rsquo;s set of {dailySet.length} (cycles through all 24 over ~6 days)
+              </span>
+              {dailySet.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={p.id === patternId}
+                  className={`dx-pattern${p.id === patternId ? ' dx-pattern-active' : ''}`}
+                  onClick={() => setPatternId(p.id)}
+                >
+                  <span className="dx-pattern-name">{p.name}</span>
+                  <span className="dx-pattern-desc">{p.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="dx-permutation-picker">
+            <span className="tool-control-label">All permutations (free practice)</span>
+            <select
+              className="dx-select"
+              value={isPermutationId(patternId) ? patternId : ''}
+              aria-label="Choose any of the 24 finger permutations"
+              onChange={(e) => {
+                if (e.target.value) setPatternId(e.target.value)
+              }}
+            >
+              <option value="" disabled>
+                Choose a permutation…
+              </option>
+              {ALL_PERMUTATION_PATTERNS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="tool-control-group">

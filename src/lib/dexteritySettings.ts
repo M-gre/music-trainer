@@ -19,6 +19,7 @@ import {
   DIRECTIONS,
   type Direction,
 } from './exercises.ts'
+import { isPermutationId } from './permutations.ts'
 import { Store, type StorageBackend } from './storage.ts'
 
 /** Tempo range offered by the slider/steppers (beats per minute). */
@@ -84,7 +85,8 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
     Record<keyof DexteritySettings, unknown>
   >
   const patternId =
-    typeof v.patternId === 'string' && BUILTIN_PATTERNS.some((p) => p.id === v.patternId)
+    typeof v.patternId === 'string' &&
+    (BUILTIN_PATTERNS.some((p) => p.id === v.patternId) || isPermutationId(v.patternId))
       ? v.patternId
       : DEFAULT_DEXTERITY_SETTINGS.patternId
   const position = typeof v.position === 'number' ? clampFret(v.position) : DEFAULT_DEXTERITY_SETTINGS.position

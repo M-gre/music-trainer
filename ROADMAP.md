@@ -58,7 +58,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 - [x] Exercise engine: patterns as fret/finger sequences, rendered on Fretboard with numbered order + metronome sync
 - [x] Bass/guitar exercises: spider walk (1-2-3-4 permutations), string crossing, position shifts — tuning-aware so they render on any fretted instrument
-- [ ] Permutation generator: all 24 finger orderings, random daily set
+- [x] Permutation generator: all 24 finger orderings, random daily set
 - [ ] Scale-sequence drills: run any scale through sequence patterns (diatonic 3rds and 4ths, groups-of-3, groups-of-4, up-and-back) in a position, rendered with fingering and metronome sync
 - [ ] Arpeggio drills: triad and 7th-chord arpeggios across strings and positions (root position + inversions), tuning-aware
 - [ ] Rhythm variation layer: apply rhythm patterns to any exercise — straight, triplets, gallop (1e&a variants), dotted, offbeat starts — plus accent-every-N-notes displacement drills
