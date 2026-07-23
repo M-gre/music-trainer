@@ -14,7 +14,7 @@
  * section below without disturbing the transport.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DRUM_VOICES,
   getAudioEngine,
@@ -26,6 +26,19 @@ import {
   type Groove,
 } from '../lib/audio/index.ts'
 import {
+  barToChordIndex,
+  ChordCompPlayer,
+  CUSTOM_PROGRESSION_ID,
+  DEFAULT_COMP_VELOCITY,
+  keyOptions,
+  MAX_BARS_PER_CHORD,
+  MIN_BARS_PER_CHORD,
+  PROGRESSION_PRESETS,
+  resolveAccompaniment,
+  type ChordCompConfig,
+  type CompStyle,
+} from '../lib/accompaniment.ts'
+import {
   clampPlayAlongTempo,
   getGroove,
   grooveVoices,
@@ -35,6 +48,12 @@ import {
   playAlongSettingsStore,
   VOICE_LABELS,
 } from '../lib/playAlongSettings.ts'
+
+const KEY_OPTIONS = keyOptions()
+const BARS_PER_CHORD_OPTIONS = Array.from(
+  { length: MAX_BARS_PER_CHORD - MIN_BARS_PER_CHORD + 1 },
+  (_, i) => MIN_BARS_PER_CHORD + i,
+)
 
 /** Short "4/4 · 8ths" style meta line for a groove card. */
 const SUBDIVISION_META: Record<Groove['subdivision'], string> = {
@@ -51,6 +70,7 @@ export function PlayAlong() {
   const engineRef = useRef(getAudioEngine())
   const schedulerRef = useRef<Scheduler | null>(null)
   const playerRef = useRef<GroovePlayer | null>(null)
+  const compRef = useRef<ChordCompPlayer | null>(null)
   const rafRef = useRef<number | null>(null)
 
   const [settings] = useState(() => normalizePlayAlongSettings(playAlongSettingsStore.get()))
@@ -63,9 +83,53 @@ export function PlayAlong() {
   const [activeBeat, setActiveBeat] = useState<number | null>(null)
   const [countingIn, setCountingIn] = useState(false)
 
+  // Accompaniment (chord-progression) state.
+  const [accEnabled, setAccEnabled] = useState(settings.accompaniment.enabled)
+  const [accRootPc, setAccRootPc] = useState(settings.accompaniment.rootPc)
+  const [accProgId, setAccProgId] = useState(settings.accompaniment.progressionId)
+  const [accCustom, setAccCustom] = useState(settings.accompaniment.customDegrees)
+  const [accBarsPerChord, setAccBarsPerChord] = useState(settings.accompaniment.barsPerChord)
+  const [accStyle, setAccStyle] = useState<CompStyle>(settings.accompaniment.style)
+  const [activeChordIndex, setActiveChordIndex] = useState<number | null>(null)
+
   const groove = getGroove(grooveId)
   const voices = grooveVoices(groove)
   const beatCount = grooveBeatsPerBar(groove)
+
+  // Resolve the accompaniment settings into chords + voice-led voicings once
+  // per change; the audio player and the display both read from this.
+  const resolved = useMemo(
+    () =>
+      resolveAccompaniment({
+        enabled: accEnabled,
+        rootPc: accRootPc,
+        progressionId: accProgId,
+        customDegrees: accCustom,
+        barsPerChord: accBarsPerChord,
+        style: accStyle,
+      }),
+    [accEnabled, accRootPc, accProgId, accCustom, accBarsPerChord, accStyle],
+  )
+  const resolvedRef = useRef(resolved)
+  resolvedRef.current = resolved
+  const countInBarsRef = useRef(0)
+  countInBarsRef.current = countIn ? 1 : 0
+
+  // Live comp-player configuration. `enabled` also requires a valid, non-empty
+  // progression so a parse error silences the comp without stopping playback.
+  const compConfig = useMemo<ChordCompConfig>(
+    () => ({
+      enabled: accEnabled && resolved.error === null && resolved.voicings.length > 0,
+      style: accStyle,
+      voicings: resolved.voicings,
+      barsPerChord: resolved.barsPerChord,
+      beatsPerBar: beatCount,
+      bpm: tempo,
+      countInBars: countIn ? 1 : 0,
+      velocity: DEFAULT_COMP_VELOCITY,
+    }),
+    [accEnabled, accStyle, resolved, beatCount, tempo, countIn],
+  )
 
   // Persist preferences whenever they change.
   useEffect(() => {
@@ -75,8 +139,33 @@ export function PlayAlong() {
       countIn,
       masterVolume,
       mutedVoices: muted,
+      accompaniment: {
+        enabled: accEnabled,
+        rootPc: accRootPc,
+        progressionId: accProgId,
+        customDegrees: accCustom,
+        barsPerChord: accBarsPerChord,
+        style: accStyle,
+      },
     })
-  }, [grooveId, tempo, countIn, masterVolume, muted])
+  }, [
+    grooveId,
+    tempo,
+    countIn,
+    masterVolume,
+    muted,
+    accEnabled,
+    accRootPc,
+    accProgId,
+    accCustom,
+    accBarsPerChord,
+    accStyle,
+  ])
+
+  // Push accompaniment changes to the live comp player mid-playback.
+  useEffect(() => {
+    compRef.current?.configure(compConfig)
+  }, [compConfig])
 
   // Apply changes to the live transport/player without stopping playback.
   useEffect(() => {
@@ -97,7 +186,9 @@ export function PlayAlong() {
     for (const voice of DRUM_VOICES) player.setMuted(voice, muted.includes(voice))
   }, [muted])
 
-  // Drive the beat indicator + count-in state from the audio-accurate position.
+  // Drive the beat indicator, count-in state and the current-chord display from
+  // the audio-accurate position (not the lookahead), so the UI matches what is
+  // actually sounding.
   const runIndicator = useCallback(() => {
     const scheduler = schedulerRef.current
     const player = playerRef.current
@@ -106,10 +197,20 @@ export function PlayAlong() {
       if (!pos) {
         setActiveBeat((prev) => (prev === null ? prev : null))
         setCountingIn((prev) => (prev ? false : prev))
+        setActiveChordIndex((prev) => (prev === null ? prev : null))
       } else {
         const inCountIn = pos.bar < player.countInBars
         setActiveBeat((prev) => (prev === pos.beat ? prev : pos.beat))
         setCountingIn((prev) => (prev === inCountIn ? prev : inCountIn))
+        const voicingCount = resolvedRef.current.voicings.length
+        const chordIndex = inCountIn
+          ? null
+          : barToChordIndex(
+              pos.bar - countInBarsRef.current,
+              voicingCount,
+              resolvedRef.current.barsPerChord,
+            )
+        setActiveChordIndex((prev) => (prev === chordIndex ? prev : chordIndex))
       }
     }
     rafRef.current = requestAnimationFrame(runIndicator)
@@ -122,28 +223,49 @@ export function PlayAlong() {
 
     let scheduler = schedulerRef.current
     let player = playerRef.current
-    if (!scheduler || !player) {
+    let comp = compRef.current
+    if (!scheduler || !player || !comp) {
       scheduler = new Scheduler(engine, { bpm: tempo })
       player = new GroovePlayer(scheduler, engine, {
         groove: getGroove(grooveId),
         countIn: { bars: countIn ? 1 : 0 },
         muted,
       })
+      comp = new ChordCompPlayer(engine)
       schedulerRef.current = scheduler
       playerRef.current = player
+      compRef.current = comp
     } else {
       scheduler.setTempo(tempo)
-      player.setGroove(getGroove(grooveId))
       player.setCountIn({ bars: countIn ? 1 : 0 })
       for (const voice of DRUM_VOICES) player.setMuted(voice, muted.includes(voice))
     }
-    player.start()
+    // Apply the groove's meter/swing to the transport (also done by
+    // GroovePlayer.start, which we bypass so we can own the event callback).
+    player.setGroove(getGroove(grooveId))
+    comp.configure(compConfig)
+
+    // Compose both players onto the scheduler's single event callback and wire
+    // it BEFORE starting, so the very first bar's chord isn't missed when the
+    // count-in is off. Both receive the same events + audio `when`, so the
+    // comp stays sample-accurately locked to the drums.
+    const drummer = player
+    const comper = comp
+    scheduler.onEvent = (event, when) => {
+      drummer.handleEvent(event, when)
+      comper.handleEvent(event, when)
+    }
+    scheduler.start()
     setRunning(true)
     if (rafRef.current === null) rafRef.current = requestAnimationFrame(runIndicator)
-  }, [tempo, grooveId, countIn, masterVolume, muted, runIndicator])
+  }, [tempo, grooveId, countIn, masterVolume, muted, compConfig, runIndicator])
 
   const stop = useCallback(() => {
-    playerRef.current?.stop()
+    const scheduler = schedulerRef.current
+    if (scheduler) {
+      scheduler.stop()
+      scheduler.onEvent = null
+    }
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = null
@@ -151,12 +273,13 @@ export function PlayAlong() {
     setRunning(false)
     setActiveBeat(null)
     setCountingIn(false)
+    setActiveChordIndex(null)
   }, [])
 
   // Tidy up the transport and animation frame on unmount.
   useEffect(
     () => () => {
-      playerRef.current?.stop()
+      schedulerRef.current?.stop()
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     },
     [],
@@ -321,8 +444,175 @@ export function PlayAlong() {
         </div>
       </section>
 
-      {/* Chord progression accompaniment (next roadmap item) slots in here as a
-          sibling <section className="pa-section"> below the drum controls. */}
+      <section className="pa-section pa-accomp" aria-label="Chord accompaniment">
+        <div className="pa-accomp-head">
+          <span className="tool-control-label">Chord accompaniment</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={accEnabled}
+            className={`pa-toggle${accEnabled ? ' pa-toggle-on' : ''}`}
+            onClick={() => setAccEnabled((prev) => !prev)}
+          >
+            <span className="pa-toggle-track">
+              <span className="pa-toggle-thumb" />
+            </span>
+            <span className="pa-toggle-label">{accEnabled ? 'On' : 'Off'}</span>
+          </button>
+        </div>
+        <p className="pa-beats-hint pa-accomp-hint">
+          A synth pad follows your key and progression, in sync with the drums — it plays even with
+          every drum voice muted, so you get a harmonic backing track to jam over.
+        </p>
+
+        {/* Current / next chord display, driven by the visual beat clock. */}
+        <div className="pa-chord-display" aria-live="polite">
+          {resolved.error ? (
+            <span className="pa-chord-error">{resolved.error}</span>
+          ) : resolved.chords.length === 0 ? (
+            <span className="pa-chord-error">No chords</span>
+          ) : (
+            (() => {
+              const currentIdx = activeChordIndex ?? 0
+              const current = resolved.chords[currentIdx] ?? resolved.chords[0]!
+              const next = resolved.chords[(currentIdx + 1) % resolved.chords.length]!
+              return (
+                <>
+                  <span className="pa-chord-symbol">{current.symbol}</span>
+                  <span className="pa-chord-next">Next: {next.symbol}</span>
+                </>
+              )
+            })()
+          )}
+        </div>
+
+        {/* Progression laid out as chips, active chord highlighted. */}
+        {resolved.chords.length > 0 && (
+          <div className="pa-prog-chips" role="list" aria-label="Progression">
+            {resolved.chords.map((chord, i) => (
+              <span
+                key={i}
+                role="listitem"
+                className={`pa-prog-chip${i === (activeChordIndex ?? -1) ? ' pa-prog-chip-active' : ''}`}
+              >
+                {chord.symbol}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="tool-controls">
+          <div className="tool-control-group pa-key-group">
+            <span className="tool-control-label">Key</span>
+            <div className="pa-key-grid" role="radiogroup" aria-label="Key">
+              {KEY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.pc}
+                  type="button"
+                  role="radio"
+                  aria-checked={opt.pc === accRootPc}
+                  className={`pa-key${opt.pc === accRootPc ? ' pa-key-active' : ''}`}
+                  onClick={() => setAccRootPc(opt.pc)}
+                >
+                  {opt.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="tool-control-group pa-prog-group">
+            <span className="tool-control-label">Progression</span>
+            <div className="pa-chips" role="radiogroup" aria-label="Progression preset">
+              {PROGRESSION_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={preset.id === accProgId}
+                  className={`pa-chip pa-prog-preset${preset.id === accProgId ? ' pa-chip-selected' : ''}`}
+                  onClick={() => setAccProgId(preset.id)}
+                >
+                  {preset.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={accProgId === CUSTOM_PROGRESSION_ID}
+                className={`pa-chip pa-prog-preset${
+                  accProgId === CUSTOM_PROGRESSION_ID ? ' pa-chip-selected' : ''
+                }`}
+                onClick={() => setAccProgId(CUSTOM_PROGRESSION_ID)}
+              >
+                Custom
+              </button>
+            </div>
+
+            {accProgId === CUSTOM_PROGRESSION_ID && (
+              <label className="pa-custom">
+                <span className="tool-control-label">Degrees (1–7)</span>
+                <input
+                  type="text"
+                  className={`pa-custom-input${resolved.error ? ' pa-custom-input-error' : ''}`}
+                  value={accCustom}
+                  inputMode="numeric"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="e.g. 1-5-6-4"
+                  aria-label="Custom progression degrees"
+                  aria-invalid={resolved.error !== null}
+                  onChange={(e) => setAccCustom(e.target.value)}
+                />
+              </label>
+            )}
+          </div>
+
+          <div className="tool-control-group pa-accomp-options">
+            <span className="tool-control-label">Bars per chord</span>
+            <div className="pa-seg" role="radiogroup" aria-label="Bars per chord">
+              {BARS_PER_CHORD_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={resolved.barsPerChord === n}
+                  disabled={resolved.barsPerChordLocked}
+                  className={`pa-seg-btn${resolved.barsPerChord === n ? ' pa-seg-btn-active' : ''}`}
+                  onClick={() => setAccBarsPerChord(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+            {resolved.barsPerChordLocked && (
+              <span className="pa-seg-note">Fixed by the 12-bar form</span>
+            )}
+
+            <span className="tool-control-label pa-style-label">Voice</span>
+            <div className="pa-seg" role="radiogroup" aria-label="Comping voice">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={accStyle === 'pad'}
+                className={`pa-seg-btn${accStyle === 'pad' ? ' pa-seg-btn-active' : ''}`}
+                onClick={() => setAccStyle('pad')}
+              >
+                Pad
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={accStyle === 'stabs'}
+                className={`pa-seg-btn${accStyle === 'stabs' ? ' pa-seg-btn-active' : ''}`}
+                onClick={() => setAccStyle('stabs')}
+              >
+                Stabs
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }

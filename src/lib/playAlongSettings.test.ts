@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_ACCOMPANIMENT_SETTINGS } from './accompaniment.ts'
 import { getGroove, GROOVES } from './audio/index.ts'
 import { memoryBackend } from './storage.ts'
 import {
@@ -57,6 +58,14 @@ describe('normalizePlayAlongSettings', () => {
       countIn: false,
       masterVolume: 0.5,
       mutedVoices: ['snare'],
+      accompaniment: {
+        enabled: true,
+        rootPc: 5,
+        progressionId: 'ii-V-I',
+        customDegrees: '1-4-5',
+        barsPerChord: 2,
+        style: 'stabs',
+      },
     }
     expect(normalizePlayAlongSettings(value)).toEqual(value)
   })
@@ -74,6 +83,7 @@ describe('normalizePlayAlongSettings', () => {
       countIn: DEFAULT_PLAY_ALONG_SETTINGS.countIn,
       masterVolume: 1,
       mutedVoices: [],
+      accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
     })
   })
 
@@ -109,9 +119,40 @@ describe('play-along settings store', () => {
       countIn: false,
       masterVolume: 0.65,
       mutedVoices: ['kick', 'hat-closed'],
+      accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
     }
     createPlayAlongSettingsStore(backend).set(value)
     expect(createPlayAlongSettingsStore(backend).get()).toEqual(value)
+  })
+
+  it('migrates v1 data (no accompaniment) by filling in the defaults', () => {
+    const backend = memoryBackend()
+    // A v1 envelope predates the accompaniment block entirely.
+    backend.setItem(
+      'mt:settings:play-along',
+      JSON.stringify({
+        v: 1,
+        data: {
+          grooveId: 'funk',
+          bpm: 132,
+          countIn: false,
+          masterVolume: 0.4,
+          mutedVoices: ['snare'],
+        },
+      }),
+    )
+    const migrated = createPlayAlongSettingsStore(backend).get()
+    expect(migrated).toEqual({
+      grooveId: 'funk',
+      bpm: 132,
+      countIn: false,
+      masterVolume: 0.4,
+      mutedVoices: ['snare'],
+      accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
+    })
+    // The upgrade is persisted at the new version so it only runs once.
+    const raw = backend.getItem('mt:settings:play-along')
+    expect(raw && JSON.parse(raw).v).toBe(2)
   })
 
   it('normalizes corrupt persisted data back to defaults on read', () => {
