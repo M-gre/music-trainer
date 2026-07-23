@@ -1461,3 +1461,138 @@ a.tool-card:hover {
   }
 }
 
+
+/* ---- Note Reading timed mode & custom range ---- */
+
+/* Custom note-range pickers (shown when the range preset is "Custom"). */
+.nr-custom-range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nr-custom-range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.nr-custom-range-clef {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  min-width: 3.5rem;
+}
+
+.nr-custom-range-to {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* Timed mode: setup card, countdown bar, results screen. */
+.nr-timed-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.nr-timed-text {
+  margin: 0;
+  color: var(--text-dim);
+  max-width: 32rem;
+}
+
+.nr-button {
+  min-height: 3rem;
+  padding: 0.6rem 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.nr-button:hover {
+  background: #f0b25a;
+}
+
+.nr-button:active {
+  background: var(--accent-dim);
+}
+
+.nr-timer {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.nr-timer-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.nr-timer-label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.nr-timer-streak {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.nr-timer-streak strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.nr-timer-low {
+  border-color: #b8433a;
+}
+
+.nr-timer-low .nr-timer-value {
+  color: #e2695f;
+}
+
+.nr-results {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.nr-results-title {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.nr-results .nr-scores {
+  width: 100%;
+}
