@@ -34,7 +34,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [ ] Circle of Fifths instrument views: when a key is selected, show its scale on the Fretboard (global tuning) and Keyboard components inside the detail panel — reuse the Scales explorer's marker building; toggle major scale / relative minor; keeps the circle usable as a fretboard/keyboard learning hub
 - [ ] Diatonic chords view: for a key, show I–vii° with numerals, play them
 - [ ] Theory quiz: key signatures, "which chord is the V of X", interval naming
-- [ ] Extend built-in tunings: bass (BEAD, D standard, half-step down, tenor EADG+5th) and guitar (Eb/half-step down, D standard, drop C, open G, open D, open E, 8-string); keep picker grouping by string count sensible as the list grows
+- [x] Extend built-in tunings: bass (BEAD, D standard, half-step down, tenor EADG+5th) and guitar (Eb/half-step down, D standard, drop C, open G, open D, open E, 8-string); keep picker grouping by string count sensible as the list grows
 
 ## M3 — Ear training
 
