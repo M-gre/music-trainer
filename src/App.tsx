@@ -6,6 +6,7 @@ import { FretboardNoteTrainer } from './pages/FretboardNoteTrainer.tsx'
 import { KeyboardNoteTrainer } from './pages/KeyboardNoteTrainer.tsx'
 import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
 import { DiatonicChords } from './pages/DiatonicChords.tsx'
+import { TheoryQuiz } from './pages/TheoryQuiz.tsx'
 import { NoteReading } from './pages/NoteReading.tsx'
 import { ScalesExplorer } from './pages/ScalesExplorer.tsx'
 import { ChordExplorer } from './pages/ChordExplorer.tsx'
@@ -67,6 +68,13 @@ export const TOOLS: Tool[] = [
     description: 'Every chord that lives in a key, with roman numerals.',
     tags: ['theory', 'piano', 'bass', 'guitar'],
     page: () => <DiatonicChords />,
+  },
+  {
+    route: '/theory-quiz',
+    title: 'Theory Quiz',
+    description: 'Key signatures, diatonic chords, and intervals.',
+    tags: ['theory'],
+    page: () => <TheoryQuiz />,
   },
   {
     route: '/note-reading',
