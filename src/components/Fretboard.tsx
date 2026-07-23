@@ -25,7 +25,11 @@ import {
   defaultMarkerLabel,
   DEFAULT_LAYOUT,
   type FretboardLayoutConfig,
+  inlayCenterY,
   inlayDots,
+  inlayDoubleOffset,
+  inlayRadius,
+  markerRadius,
   mirrorX,
   noteX,
   stringStrokeWidth,
@@ -123,9 +127,9 @@ export function Fretboard({
   const cellFrets = Array.from({ length: layout.cells }, (_, i) => layout.firstFret + i)
   const clickableFrets = layout.open ? [0, ...cellFrets] : cellFrets
 
-  const midY = (layout.boardTop + layout.boardBottom) / 2
-  const inlayR = Math.min(config.stringSpacing, config.fretWidth) * 0.16
-  const dotR = Math.min(config.stringSpacing, config.fretWidth) * 0.4
+  const inlayCy = inlayCenterY(layout)
+  const inlayR = inlayRadius(config)
+  const dotR = markerRadius(config)
 
   return (
     <svg
@@ -149,13 +153,13 @@ export function Fretboard({
       {inlayDots(layout.fromFret, layout.toFret).map((dot) => {
         const cx = mx(noteX(layout, dot.fret))
         if (!dot.double) {
-          return <circle key={`inlay-${dot.fret}`} className="fb-inlay" cx={cx} cy={midY} r={inlayR} />
+          return <circle key={`inlay-${dot.fret}`} className="fb-inlay" cx={cx} cy={inlayCy} r={inlayR} />
         }
-        const offset = config.stringSpacing * 0.9
+        const offset = inlayDoubleOffset(layout)
         return (
           <g key={`inlay-${dot.fret}`}>
-            <circle className="fb-inlay" cx={cx} cy={midY - offset} r={inlayR} />
-            <circle className="fb-inlay" cx={cx} cy={midY + offset} r={inlayR} />
+            <circle className="fb-inlay" cx={cx} cy={inlayCy - offset} r={inlayR} />
+            <circle className="fb-inlay" cx={cx} cy={inlayCy + offset} r={inlayR} />
           </g>
         )
       })}
@@ -199,7 +203,7 @@ export function Fretboard({
             key={`num-${dot.fret}`}
             className="fb-fret-number"
             x={mx(noteX(layout, dot.fret))}
-            y={layout.boardBottom + config.labelGutter - 4}
+            y={layout.fretNumberY}
             textAnchor="middle"
           >
             {dot.fret}
