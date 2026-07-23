@@ -44,7 +44,8 @@ describe('normalizeDexteritySettings', () => {
       arpInversion: 'first',
       position: 7,
       bpm: 100,
-      notesPerBeat: 2,
+      rhythmId: 'gallop',
+      accentEveryN: 3,
       autoAdvance: true,
       advanceMin: 3,
       advanceMax: 9,
@@ -90,10 +91,22 @@ describe('normalizeDexteritySettings', () => {
     )
   })
 
-  it('rejects an unsupported notes-per-beat value', () => {
-    expect(normalizeDexteritySettings({ notesPerBeat: 5 }).notesPerBeat).toBe(
-      DEFAULT_DEXTERITY_SETTINGS.notesPerBeat,
+  it('rejects an unknown rhythm and accent value', () => {
+    expect(normalizeDexteritySettings({ rhythmId: 'bogus' }).rhythmId).toBe(
+      DEFAULT_DEXTERITY_SETTINGS.rhythmId,
     )
+    expect(normalizeDexteritySettings({ rhythmId: 'triplets' }).rhythmId).toBe('triplets')
+    expect(normalizeDexteritySettings({ accentEveryN: 5 }).accentEveryN).toBe(
+      DEFAULT_DEXTERITY_SETTINGS.accentEveryN,
+    )
+    expect(normalizeDexteritySettings({ accentEveryN: 3 }).accentEveryN).toBe(3)
+  })
+
+  it('derives the rhythm from a legacy notes-per-beat when no rhythm is set', () => {
+    expect(normalizeDexteritySettings({ notesPerBeat: 3 }).rhythmId).toBe('triplets')
+    expect(normalizeDexteritySettings({ notesPerBeat: 4 }).rhythmId).toBe('sixteenths')
+    // An explicit rhythm wins over the legacy field.
+    expect(normalizeDexteritySettings({ notesPerBeat: 3, rhythmId: 'gallop' }).rhythmId).toBe('gallop')
   })
 
   it('orders the auto-advance span so min <= max', () => {
@@ -118,7 +131,20 @@ describe('normalizeDexteritySettings', () => {
 })
 
 describe('migrateDexteritySettings', () => {
-  it('fills in direction with the default for v1 data that lacks it', () => {
+  // Fields older versions all shared once normalized (position/bpm coerced,
+  // legacy notesPerBeat:2 -> 'eighths', accent layer off).
+  const commonV5Fields = {
+    patternId: 'chromatic-4nps',
+    position: 7,
+    bpm: 100,
+    rhythmId: 'eighths',
+    accentEveryN: 0,
+    autoAdvance: true,
+    advanceMin: 3,
+    advanceMax: 9,
+  }
+
+  it('fills in direction + rhythm defaults for v1 data that lacks them', () => {
     const v1Data = {
       patternId: 'chromatic-4nps',
       position: 7,
@@ -129,7 +155,7 @@ describe('migrateDexteritySettings', () => {
       advanceMax: 9,
     }
     expect(migrateDexteritySettings(v1Data)).toEqual({
-      ...v1Data,
+      ...commonV5Fields,
       direction: DEFAULT_DEXTERITY_SETTINGS.direction,
       mode: DEFAULT_DEXTERITY_SETTINGS.mode,
       scaleRootPc: DEFAULT_DEXTERITY_SETTINGS.scaleRootPc,
@@ -153,7 +179,8 @@ describe('migrateDexteritySettings', () => {
       direction: 'reverse',
     }
     expect(migrateDexteritySettings(v2Data)).toEqual({
-      ...v2Data,
+      ...commonV5Fields,
+      direction: 'reverse',
       mode: DEFAULT_DEXTERITY_SETTINGS.mode,
       scaleRootPc: DEFAULT_DEXTERITY_SETTINGS.scaleRootPc,
       scaleId: DEFAULT_DEXTERITY_SETTINGS.scaleId,
@@ -180,31 +207,60 @@ describe('migrateDexteritySettings', () => {
       direction: 'reverse',
     }
     expect(migrateDexteritySettings(v3Data)).toEqual({
-      ...v3Data,
+      ...commonV5Fields,
+      mode: 'scale',
+      scaleRootPc: 3,
+      scaleId: 'dorian',
+      sequenceId: 'groups-of-4',
+      direction: 'reverse',
       arpRootPc: DEFAULT_DEXTERITY_SETTINGS.arpRootPc,
       arpQualityId: DEFAULT_DEXTERITY_SETTINGS.arpQualityId,
       arpInversion: DEFAULT_DEXTERITY_SETTINGS.arpInversion,
     })
   })
 
-  it('a v3-tagged envelope in the store is transparently upgraded to v4', () => {
+  it('fills in the rhythm fields for v4 data, deriving the rhythm from notesPerBeat', () => {
+    const v4Data = {
+      mode: 'arpeggio',
+      patternId: 'chromatic-4nps',
+      scaleRootPc: 3,
+      scaleId: 'dorian',
+      sequenceId: 'groups-of-4',
+      arpRootPc: 5,
+      arpQualityId: 'min7',
+      arpInversion: 'first',
+      position: 7,
+      bpm: 100,
+      notesPerBeat: 3,
+      autoAdvance: true,
+      advanceMin: 3,
+      advanceMax: 9,
+      direction: 'reverse',
+    }
+    const migrated = migrateDexteritySettings(v4Data)
+    expect(migrated.rhythmId).toBe('triplets')
+    expect(migrated.accentEveryN).toBe(0)
+    expect('notesPerBeat' in migrated).toBe(false)
+  })
+
+  it('a v4-tagged envelope in the store is transparently upgraded to v5', () => {
     const backend = memoryBackend()
-    const v3Data = { ...DEFAULT_DEXTERITY_SETTINGS, bpm: 140 } as Partial<DexteritySettings>
-    delete v3Data.arpRootPc
-    delete v3Data.arpQualityId
-    delete v3Data.arpInversion
-    backend.setItem('mt:settings:dexterity', JSON.stringify({ v: 3, data: v3Data }))
+    const v4Data = { ...DEFAULT_DEXTERITY_SETTINGS, bpm: 140, notesPerBeat: 4 } as Partial<DexteritySettings> & {
+      notesPerBeat?: number
+    }
+    delete v4Data.rhythmId
+    delete v4Data.accentEveryN
+    backend.setItem('mt:settings:dexterity', JSON.stringify({ v: 4, data: v4Data }))
 
     const store = createDexteritySettingsStore(backend)
     const loaded = store.get()
-    expect(loaded.arpRootPc).toBe(DEFAULT_DEXTERITY_SETTINGS.arpRootPc)
-    expect(loaded.arpQualityId).toBe(DEFAULT_DEXTERITY_SETTINGS.arpQualityId)
-    expect(loaded.arpInversion).toBe(DEFAULT_DEXTERITY_SETTINGS.arpInversion)
+    expect(loaded.rhythmId).toBe('sixteenths')
+    expect(loaded.accentEveryN).toBe(0)
     expect(loaded.bpm).toBe(140)
 
     // The migration also persists the upgraded shape.
     const rawAfter = JSON.parse(backend.getItem('mt:settings:dexterity')!) as { v: number }
-    expect(rawAfter.v).toBe(4)
+    expect(rawAfter.v).toBe(5)
   })
 })
 

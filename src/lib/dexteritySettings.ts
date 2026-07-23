@@ -10,8 +10,11 @@
  * independent of a pattern's own traversal); v3 added the scale-sequence drill
  * fields (`mode`, `scaleRootPc`, `scaleId`, `sequenceId`); v4 added the
  * arpeggio-drill fields (`arpRootPc`, `arpQualityId`, `arpInversion`) and the
- * `'arpeggio'` mode. Older data is migrated by filling any missing field in
- * with its default (`normalizeDexteritySettings` handles every version).
+ * `'arpeggio'` mode. v5 replaced the `notesPerBeat` subdivision with the richer
+ * rhythm-variation layer (`rhythmId`, `accentEveryN`) — a v4 record's old
+ * `notesPerBeat` is used to pick the matching even rhythm on migration. Older
+ * data is migrated by filling any missing field in with its default
+ * (`normalizeDexteritySettings` handles every version).
  */
 
 import {
@@ -30,6 +33,14 @@ import {
   type Direction,
 } from './exercises.ts'
 import { isPermutationId } from './permutations.ts'
+import {
+  type AccentEveryN,
+  DEFAULT_RHYTHM_ID,
+  isAccentEveryN,
+  isRhythmId,
+  rhythmForNotesPerBeat,
+  type RhythmId,
+} from './rhythmVariations.ts'
 import { DEFAULT_SEQUENCE_ID, isSequencePatternId, type SequencePatternId } from './scaleSequences.ts'
 import { Store, type StorageBackend } from './storage.ts'
 import { mod12 } from './theory/notes.ts'
@@ -42,9 +53,6 @@ export const MAX_BPM = 240
 /** Fret range the position selector + auto-advance span operate within. */
 export const MIN_FRET = 0
 export const MAX_FRET = 22
-
-/** Selectable notes-per-beat (metronome subdivisions driving step advancement). */
-export const NOTES_PER_BEAT_OPTIONS = [1, 2, 3, 4] as const
 
 /** Which family of drill the tool is showing: built-in patterns, scale sequences, or arpeggios. */
 export type DexterityMode = 'pattern' | 'scale' | 'arpeggio'
@@ -72,8 +80,10 @@ export interface DexteritySettings {
   position: number
   /** Tempo in beats per minute. */
   bpm: number
-  /** Steps advanced per beat (== metronome subdivisions per beat). */
-  notesPerBeat: number
+  /** Rhythm pattern applied to the exercise steps (straight, triplets, gallop, …). */
+  rhythmId: RhythmId
+  /** Accent every Nth note (2/3/4) for displacement drills; 0 = accent layer off. */
+  accentEveryN: AccentEveryN
   /** Advance the position +1 fret each loop, within `[advanceMin, advanceMax]`. */
   autoAdvance: boolean
   /** Lowest fret of the auto-advance span. */
@@ -95,7 +105,8 @@ export const DEFAULT_DEXTERITY_SETTINGS: DexteritySettings = {
   arpInversion: DEFAULT_INVERSION,
   position: 5,
   bpm: 80,
-  notesPerBeat: 1,
+  rhythmId: DEFAULT_RHYTHM_ID,
+  accentEveryN: 0,
   autoAdvance: false,
   advanceMin: 1,
   advanceMax: 12,
@@ -120,9 +131,10 @@ export function clampFret(fret: number): number {
  * span is normalized so `advanceMin <= advanceMax`.
  */
 export function normalizeDexteritySettings(value: unknown): DexteritySettings {
+  // `notesPerBeat` is a removed v4 field still read for migration (see below).
   const v = (typeof value === 'object' && value !== null ? value : {}) as Partial<
     Record<keyof DexteritySettings, unknown>
-  >
+  > & { notesPerBeat?: unknown }
   const mode: DexterityMode =
     v.mode === 'pattern' || v.mode === 'scale' || v.mode === 'arpeggio'
       ? v.mode
@@ -158,10 +170,13 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
       : DEFAULT_DEXTERITY_SETTINGS.arpInversion
   const position = typeof v.position === 'number' ? clampFret(v.position) : DEFAULT_DEXTERITY_SETTINGS.position
   const bpm = typeof v.bpm === 'number' ? clampBpm(v.bpm) : DEFAULT_DEXTERITY_SETTINGS.bpm
-  const notesPerBeat =
-    typeof v.notesPerBeat === 'number' && NOTES_PER_BEAT_OPTIONS.includes(v.notesPerBeat as 1 | 2 | 3 | 4)
-      ? v.notesPerBeat
-      : DEFAULT_DEXTERITY_SETTINGS.notesPerBeat
+  // Rhythm supersedes the old `notesPerBeat` subdivision; when a v4 (or older)
+  // record has no `rhythmId`, derive it from that legacy field so a saved
+  // "eighths"/"triplets"/"sixteenths" feel survives the migration.
+  const rhythmId: RhythmId = isRhythmId(v.rhythmId) ? v.rhythmId : rhythmForNotesPerBeat(v.notesPerBeat)
+  const accentEveryN: AccentEveryN = isAccentEveryN(v.accentEveryN)
+    ? v.accentEveryN
+    : DEFAULT_DEXTERITY_SETTINGS.accentEveryN
   const autoAdvance = typeof v.autoAdvance === 'boolean' ? v.autoAdvance : DEFAULT_DEXTERITY_SETTINGS.autoAdvance
 
   const rawMin = typeof v.advanceMin === 'number' ? clampFret(v.advanceMin) : DEFAULT_DEXTERITY_SETTINGS.advanceMin
@@ -185,7 +200,8 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
     arpInversion,
     position,
     bpm,
-    notesPerBeat,
+    rhythmId,
+    accentEveryN,
     autoAdvance,
     advanceMin,
     advanceMax,
@@ -197,8 +213,10 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
  * Migrate persisted data from an older schema version. v1 lacked `direction`;
  * v2 lacked the scale-sequence fields (`mode`, `scaleRootPc`, `scaleId`,
  * `sequenceId`); v3 lacked the arpeggio fields (`arpRootPc`, `arpQualityId`,
- * `arpInversion`). `normalizeDexteritySettings` fills every missing field in
- * with its default, so a single pass upgrades data from any prior version.
+ * `arpInversion`); v4 used `notesPerBeat` instead of the rhythm layer
+ * (`rhythmId`, `accentEveryN`). `normalizeDexteritySettings` fills every missing
+ * field in with its default (deriving `rhythmId` from a legacy `notesPerBeat`),
+ * so a single pass upgrades data from any prior version.
  */
 export function migrateDexteritySettings(oldData: unknown): DexteritySettings {
   return normalizeDexteritySettings(oldData)
@@ -209,7 +227,7 @@ export function createDexteritySettingsStore(backend?: StorageBackend): Store<De
   return new Store<DexteritySettings>(
     {
       key: 'settings:dexterity',
-      version: 4,
+      version: 5,
       defaultValue: DEFAULT_DEXTERITY_SETTINGS,
       migrate: migrateDexteritySettings,
     },
