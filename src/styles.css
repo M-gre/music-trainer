@@ -2431,3 +2431,288 @@ a.tool-card:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Dexterity Exercises ---- */
+
+.dx-pattern-group {
+  flex: 1 1 22rem;
+}
+
+.dx-patterns {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dx-pattern {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  min-height: 44px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.dx-pattern:hover {
+  border-color: var(--accent-dim);
+}
+
+.dx-pattern-active {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.dx-pattern-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.dx-pattern-active .dx-pattern-name {
+  color: var(--accent);
+}
+
+.dx-pattern-desc {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.dx-instrument {
+  margin: 0;
+}
+
+.dx-position {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.dx-position-value {
+  min-width: 2.5rem;
+  text-align: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.dx-steppers {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.dx-stepper {
+  flex: 1 1 0;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.4rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.dx-stepper:hover {
+  border-color: var(--accent-dim);
+}
+
+.dx-stepper:active {
+  background: var(--bg-hover);
+}
+
+.dx-stepper:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dx-slider {
+  width: 100%;
+  min-height: 44px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dx-tempo-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.dx-tempo-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.dx-tempo-unit {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.dx-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dx-segment {
+  flex: 1 1 3.5rem;
+  min-height: 44px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.dx-segment:hover {
+  border-color: var(--accent-dim);
+}
+
+.dx-segment-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.dx-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.dx-toggle input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
+}
+
+.dx-range {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.dx-range-off {
+  opacity: 0.5;
+}
+
+.dx-range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  flex: 1 1 0;
+}
+
+.dx-range-field input {
+  min-height: 44px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+}
+
+.dx-board {
+  padding: 0.75rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.dx-strip {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.25rem 0.1rem 0.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dx-strip-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  flex: 0 0 auto;
+  min-width: 3rem;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.dx-strip-active {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.dx-strip-order {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.dx-strip-finger {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
+.dx-strip-active .dx-strip-finger {
+  color: var(--accent);
+}
+
+.dx-strip-meta {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.dx-transport {
+  display: flex;
+}
+
+.dx-start {
+  flex: 1 1 0;
+  min-height: 3.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  touch-action: manipulation;
+}
+
+.dx-start-active {
+  color: var(--text);
+  background: #b8433a;
+  border-color: #b8433a;
+}
