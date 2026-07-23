@@ -20,7 +20,11 @@
  * AudioContext is ever constructed in tests.
  */
 
-import { readPersistedMasterVolume } from '../globalSettings.ts'
+import {
+  readPersistedMasterVolume,
+  readPersistedVoicePreferences,
+  type VoicePreferences,
+} from '../globalSettings.ts'
 import { midiToFreq, type Midi } from '../theory/notes.ts'
 import { DrumKit, type DrumVoice, type PlayDrumOptions } from './drums.ts'
 import {
@@ -30,6 +34,9 @@ import {
   velocityToGain,
   type AdsrParams,
 } from './envelope.ts'
+import { renderFmPiano, pianoOptionsForMidi } from './fmPiano.ts'
+import { renderKarplusStrong, pluckOptionsForMidi } from './karplusStrong.ts'
+import { VOICE_PEAK, type VoiceName } from './voices.ts'
 
 // --- Minimal structural Web Audio surface ----------------------------------
 
@@ -106,15 +113,13 @@ export type AudioContextFactory = () => MinimalAudioContext
 /** Default master volume (0..1). */
 export const DEFAULT_MASTER_VOLUME = 0.8
 
-/**
- * Per-voice headroom. Two detuned oscillators sum, and chords stack several
- * voices, so each voice peaks well below 1 and the master limiter catches the
- * rest without audible pumping.
- */
-const VOICE_LEVEL = 0.35
-
 /** Short ramp used when changing the master volume so it never clicks. */
 const VOLUME_RAMP = 0.02
+
+/** Click-free fade-in for a rendered-buffer voice (pluck/piano), seconds. */
+const BUFFER_ATTACK = 0.0015
+/** Fade-out at gate end so a truncated buffer note does not click, seconds. */
+const BUFFER_RELEASE = 0.06
 
 /** Shortest fade-in of a click so a hard-step attack transient never clicks. */
 const CLICK_ATTACK = 0.0008
@@ -132,11 +137,19 @@ export interface PlayNoteOptions extends Partial<AdsrParams> {
   velocity?: number
   /** Absolute AudioContext start time. Default: now. */
   when?: number
-  /** Oscillator waveform. Default `'sawtooth'`. */
+  /**
+   * Which synthesized voice to use. Defaults to the engine's active-context
+   * preference (see `setVoiceContext` / `setVoicePreferences`).
+   */
+  voice?: VoiceName
+  /**
+   * Oscillator waveform for the `classic` voice. Default `'sawtooth'`.
+   * (Ignored by the buffer-based `pluck` / `piano` voices.)
+   */
   type?: OscillatorType
   /**
-   * Chorus spread in cents between the two oscillators (they sit at ±detune/2).
-   * Default 8. Pass 0 for a single-pitch, phase-locked pair.
+   * Chorus spread in cents between the `classic` voice's two oscillators (they
+   * sit at ±detune/2). Default 8. Pass 0 for a single-pitch, phase-locked pair.
    */
   detune?: number
 }
@@ -187,6 +200,11 @@ export class AudioEngine {
   // it for the session before the master chain is even built.
   private volume = readPersistedMasterVolume()
   private drumKit: DrumKit | null = null
+  // Voice selection. Preferences seed from the persisted global setting; the
+  // active `voiceContext` picks which preference a note uses when the caller
+  // does not pass an explicit `voice`.
+  private voicePrefs: VoicePreferences = readPersistedVoicePreferences()
+  private voiceContext: keyof VoicePreferences = 'fretted'
 
   constructor(private readonly createContext: AudioContextFactory = defaultContextFactory) {}
 
@@ -258,6 +276,32 @@ export class AudioEngine {
     }
   }
 
+  /** The current voice preferences (a copy). */
+  get voicePreferences(): VoicePreferences {
+    return { ...this.voicePrefs }
+  }
+
+  /**
+   * Update the voice preferences for the session (e.g. from the settings page,
+   * mirroring `setMasterVolume`). Takes effect on the next note.
+   */
+  setVoicePreferences(prefs: VoicePreferences): void {
+    this.voicePrefs = { ...prefs }
+  }
+
+  /**
+   * Choose which preference (`fretted` or `keyboard`) subsequent notes use when
+   * the caller does not pass an explicit `voice`. Defaults to `fretted`.
+   */
+  setVoiceContext(context: keyof VoicePreferences): void {
+    this.voiceContext = context
+  }
+
+  /** Resolve the voice for a note: explicit override, else active context. */
+  private resolveVoice(voice: VoiceName | undefined): VoiceName {
+    return voice ?? this.voicePrefs[this.voiceContext]
+  }
+
   /**
    * The node every sound source should connect into. Ensures the master chain
    * exists so other synths (e.g. a future drum synth) can share it.
@@ -267,15 +311,30 @@ export class AudioEngine {
   }
 
   /**
-   * Play a single note. Builds a short-lived voice (two detuned oscillators
-   * into a per-note gain running the ADSR envelope) and tears it down once the
-   * release tail has finished, so nothing leaks.
+   * Play a single note using the resolved voice (explicit `opts.voice`, else the
+   * active-context preference). `pluck` and `piano` render a Karplus-Strong /
+   * additive buffer; `classic` uses the dual detuned-oscillator synth. Every
+   * voice runs through a per-note gain and is torn down after its tail, so
+   * nothing leaks.
    */
   playNote(midi: Midi, duration: number, opts: PlayNoteOptions = {}): void {
+    const voice = this.resolveVoice(opts.voice)
+    if (voice === 'pluck' || voice === 'piano') {
+      this.playBufferVoice(voice, midi, duration, opts)
+      return
+    }
+    this.playClassicVoice(midi, duration, opts)
+  }
+
+  /**
+   * The original dual detuned-sawtooth synth: two oscillators into a per-note
+   * gain running the ADSR envelope from `envelope.ts`.
+   */
+  private playClassicVoice(midi: Midi, duration: number, opts: PlayNoteOptions): void {
     const { ctx, master } = this.init()
     const when = opts.when ?? ctx.currentTime
     const params = resolveAdsr(opts)
-    const peak = VOICE_LEVEL * velocityToGain(opts.velocity ?? 1)
+    const peak = VOICE_PEAK.classic * velocityToGain(opts.velocity ?? 1)
     const env = computeEnvelope({ startTime: when, duration, peak, params })
 
     const waveform: OscillatorType = opts.type ?? 'sawtooth'
@@ -317,6 +376,54 @@ export class AudioEngine {
       osc.start(when)
       osc.stop(env.stopTime)
     }
+  }
+
+  /**
+   * Play a rendered-buffer voice (`pluck` = Karplus-Strong, `piano` = additive).
+   * The buffer carries the voice's natural attack + decay; the per-note gain
+   * only applies a click-free fade-in, holds while the note is gated, then
+   * fades out at gate end so a note that stops before its natural decay does
+   * not click. The buffer is rendered just long enough to cover the gate + tail.
+   */
+  private playBufferVoice(
+    voice: 'pluck' | 'piano',
+    midi: Midi,
+    duration: number,
+    opts: PlayNoteOptions,
+  ): void {
+    const { ctx, master } = this.init()
+    const when = opts.when ?? ctx.currentTime
+    const gate = Math.max(duration, BUFFER_ATTACK + 0.005)
+    const gateEnd = when + gate
+    const renderSeconds = Math.min(4, Math.max(0.3, gate + BUFFER_RELEASE + 0.05))
+
+    const samples =
+      voice === 'pluck'
+        ? renderKarplusStrong(midi, renderSeconds, ctx.sampleRate, pluckOptionsForMidi(midi))
+        : renderFmPiano(midi, renderSeconds, ctx.sampleRate, pianoOptionsForMidi(midi))
+
+    const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate)
+    buffer.getChannelData(0).set(samples)
+
+    const peak = Math.max(CLICK_FLOOR, VOICE_PEAK[voice] * velocityToGain(opts.velocity ?? 1))
+    const voiceGain = ctx.createGain()
+    voiceGain.gain.value = 0
+    voiceGain.connect(master)
+    const gain = voiceGain.gain
+    gain.setValueAtTime(0, when)
+    gain.linearRampToValueAtTime(peak, when + BUFFER_ATTACK)
+    gain.setValueAtTime(peak, gateEnd)
+    gain.linearRampToValueAtTime(0, gateEnd + BUFFER_RELEASE)
+
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    source.connect(voiceGain)
+    source.onended = (): void => {
+      source.disconnect()
+      voiceGain.disconnect()
+    }
+    source.start(when)
+    source.stop(gateEnd + BUFFER_RELEASE + 0.01)
   }
 
   /**

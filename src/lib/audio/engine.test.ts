@@ -258,7 +258,7 @@ describe('AudioEngine.setMasterVolume', () => {
 describe('AudioEngine.playNote', () => {
   it('wires two detuned oscillators through a voice gain into the master', () => {
     const { engine, factory } = makeEngine()
-    engine.playNote(69, 1, { when: 100, detune: 8 })
+    engine.playNote(69, 1, { when: 100, detune: 8, voice: 'classic' })
     const ctx = factory()
     // one master gain + one voice gain
     expect(ctx.gains.length).toBe(2)
@@ -280,7 +280,7 @@ describe('AudioEngine.playNote', () => {
 
   it('applies the envelope plan to the voice gain (starts and ends at 0)', () => {
     const { engine, factory } = makeEngine()
-    engine.playNote(60, 0.5, { when: 0 })
+    engine.playNote(60, 0.5, { when: 0, voice: 'classic' })
     const voice = factory().gains[1]!
     const events = voice.gain.events
     expect(events[0]).toEqual({ type: 'cancel', value: 0, time: 0 })
@@ -290,13 +290,13 @@ describe('AudioEngine.playNote', () => {
 
   it('defaults the start time to the context clock', () => {
     const { engine, factory } = makeEngine()
-    engine.playNote(60, 1)
+    engine.playNote(60, 1, { voice: 'classic' })
     expect(factory().oscillators[0]!.started).toBe(10)
   })
 
   it('disconnects nodes only after the last oscillator ends', () => {
     const { engine, factory } = makeEngine()
-    engine.playNote(60, 1)
+    engine.playNote(60, 1, { voice: 'classic' })
     const ctx = factory()
     const voice = ctx.gains[1]!
     const [a, b] = ctx.oscillators as [FakeOscillator, FakeOscillator]
@@ -460,9 +460,103 @@ describe('AudioEngine.playClick', () => {
 describe('AudioEngine.playChord', () => {
   it('plays one voice per note into the shared master', () => {
     const { engine, factory } = makeEngine()
-    engine.playChord([60, 64, 67], 1, { when: 0 })
+    engine.playChord([60, 64, 67], 1, { when: 0, voice: 'classic' })
     const ctx = factory()
     expect(ctx.oscillators.length).toBe(6) // 3 notes x 2 osc
     expect(ctx.gains.length).toBe(4) // 1 master + 3 voices
+  })
+})
+
+describe('AudioEngine buffer voices (pluck / piano)', () => {
+  it('renders a buffer source through a voice gain for the pluck voice', () => {
+    const { engine, factory } = makeEngine()
+    engine.playNote(45, 0.7, { when: 3, voice: 'pluck' })
+    const ctx = factory()
+    // No oscillators — a plucked string is a rendered buffer.
+    expect(ctx.oscillators.length).toBe(0)
+    expect(ctx.bufferSources.length).toBe(1)
+    expect(ctx.gains.length).toBe(2) // master + voice gain
+    const source = ctx.bufferSources[0]!
+    const voiceGain = ctx.gains[1]!
+    expect(source.buffer).not.toBeNull()
+    expect(source.connectedTo).toContain(voiceGain)
+    expect(voiceGain.connectedTo).toContain(ctx.gains[0]!)
+    expect(source.started).toBe(3)
+    expect(source.stopped).toBeGreaterThan(3)
+  })
+
+  it('gates the buffer gain: fade-in to peak, hold, fade-out to 0', () => {
+    const { engine, factory } = makeEngine()
+    engine.playNote(64, 0.5, { when: 0, voice: 'piano' })
+    const voiceGain = factory().gains[1]!
+    const events = voiceGain.gain.events
+    expect(events[0]).toEqual({ type: 'set', value: 0, time: 0 })
+    const peakEvent = events[1]!
+    expect(peakEvent.type).toBe('linear')
+    expect(peakEvent.value).toBeGreaterThan(0)
+    // Ends at silence so a truncated buffer never clicks.
+    expect(events[events.length - 1]?.value).toBe(0)
+  })
+
+  it('defaults the buffer start time to the context clock', () => {
+    const { engine, factory } = makeEngine()
+    engine.playNote(43, 0.6, { voice: 'pluck' })
+    expect(factory().bufferSources[0]!.started).toBe(10)
+  })
+
+  it('disconnects the buffer nodes when the source ends', () => {
+    const { engine, factory } = makeEngine()
+    engine.playNote(52, 0.5, { voice: 'piano' })
+    const ctx = factory()
+    const source = ctx.bufferSources[0] as FakeBufferSource
+    const voiceGain = ctx.gains[1]!
+    source.fireEnded()
+    expect(source.disconnected).toBe(true)
+    expect(voiceGain.disconnected).toBe(true)
+  })
+
+  it('scales the peak gain by velocity', () => {
+    const { engine, factory } = makeEngine()
+    engine.playNote(45, 0.5, { when: 0, voice: 'pluck', velocity: 0.5 })
+    const soft = factory().gains[1]!.gain.events[1]!.value
+    const { engine: engine2, factory: factory2 } = makeEngine()
+    engine2.playNote(45, 0.5, { when: 0, voice: 'pluck', velocity: 1 })
+    const loud = factory2().gains[1]!.gain.events[1]!.value
+    expect(loud).toBeGreaterThan(soft)
+  })
+})
+
+describe('AudioEngine voice routing', () => {
+  it('defaults to the fretted preference (pluck) when no voice is given', () => {
+    const { engine, factory } = makeEngine()
+    engine.playNote(45, 0.5)
+    // pluck => a buffer source, not oscillators.
+    expect(factory().bufferSources.length).toBe(1)
+    expect(factory().oscillators.length).toBe(0)
+  })
+
+  it('setVoiceContext("keyboard") uses the keyboard preference (piano)', () => {
+    const { engine, factory } = makeEngine()
+    engine.setVoiceContext('keyboard')
+    engine.playNote(60, 0.5)
+    expect(factory().bufferSources.length).toBe(1)
+    expect(factory().oscillators.length).toBe(0)
+  })
+
+  it('setVoicePreferences overrides the context default', () => {
+    const { engine, factory } = makeEngine()
+    engine.setVoicePreferences({ fretted: 'classic', keyboard: 'piano' })
+    engine.playNote(45, 0.5)
+    // classic => oscillators, no buffer source.
+    expect(factory().oscillators.length).toBe(2)
+    expect(factory().bufferSources.length).toBe(0)
+    expect(engine.voicePreferences).toEqual({ fretted: 'classic', keyboard: 'piano' })
+  })
+
+  it('an explicit voice option overrides everything', () => {
+    const { engine, factory } = makeEngine()
+    engine.setVoicePreferences({ fretted: 'pluck', keyboard: 'pluck' })
+    engine.playNote(45, 0.5, { voice: 'classic' })
+    expect(factory().oscillators.length).toBe(2)
   })
 })

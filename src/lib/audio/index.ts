@@ -1,4 +1,7 @@
 export * from './envelope.ts'
+export * from './voices.ts'
+export * from './karplusStrong.ts'
+export * from './fmPiano.ts'
 export * from './engine.ts'
 export * from './drums.ts'
 export * from './clickVoices.ts'
