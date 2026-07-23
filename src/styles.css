@@ -879,6 +879,267 @@ a.tool-card:hover {
 }
 
 
+/* ---- Ear Training (interval recognition) ---- */
+
+.et-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.et-chip {
+  min-width: 2.75rem;
+  min-height: 44px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.et-chip:hover {
+  border-color: var(--accent-dim);
+}
+
+.et-chip-on {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.et-transport {
+  display: flex;
+}
+
+.et-play {
+  flex: 1 1 0;
+  min-height: 3.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.et-play:hover {
+  background: #f0b055;
+}
+
+.et-play:active {
+  background: var(--accent-dim);
+}
+
+.et-answers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.5rem;
+}
+
+.et-answer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.4rem;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.et-answer:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.et-answer:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.et-answer-short {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.et-answer-full {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.et-answer-correct,
+.et-answer-correct:disabled {
+  background: #3fae6b;
+  border-color: #3fae6b;
+  opacity: 1;
+}
+
+.et-answer-correct .et-answer-short,
+.et-answer-correct .et-answer-full {
+  color: var(--bg);
+}
+
+.et-answer-wrong,
+.et-answer-wrong:disabled {
+  background: #b8433a;
+  border-color: #b8433a;
+  opacity: 1;
+}
+
+.et-answer-wrong .et-answer-short,
+.et-answer-wrong .et-answer-full {
+  color: var(--text);
+}
+
+.et-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.et-compare-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.et-compare-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.et-compare-btn:hover {
+  border-color: var(--accent-dim);
+}
+
+.et-next {
+  min-height: 44px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.et-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.et-stats-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.et-reset {
+  min-height: 44px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.et-reset:hover {
+  border-color: var(--accent-dim);
+  color: var(--text);
+}
+
+.et-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.et-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.et-stat-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.et-stat-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.et-stat-tag {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.et-stat-acc {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.et-stat-n {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.et-stat-empty {
+  color: var(--text-dim);
+}
+
+
 /* ---- Circle of Fifths ---- */
 
 .cf-circle-wrap {

@@ -8,6 +8,7 @@ import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
 import { NoteReading } from './pages/NoteReading.tsx'
 import { ScalesExplorer } from './pages/ScalesExplorer.tsx'
 import { ChordExplorer } from './pages/ChordExplorer.tsx'
+import { EarTraining } from './pages/EarTraining.tsx'
 
 export interface Tool {
   route: string
@@ -71,6 +72,7 @@ export const TOOLS: Tool[] = [
     title: 'Ear Training',
     description: 'Intervals, chord qualities, and melodies by ear.',
     tags: ['ear'],
+    page: () => <EarTraining />,
   },
   {
     route: '/play-along',
