@@ -69,7 +69,9 @@ When adding ideas, add them as unchecked items in the right milestone.
 ## M6 — Polish
 
 - [x] Practice dashboard: streaks, per-tool stats, suggested daily routine
-- [ ] Spaced repetition for all quiz tools (shared lib)
+- [x] Spaced repetition: shared lib (`src/lib/spacedRepetition.ts`, SM-2-style scheduler) + wire into the note trainers (fretboard + keyboard)
+- [ ] Spaced repetition: wire into ear-training modes (interval, chord quality, scale recognition)
+- [ ] Spaced repetition: wire into note reading + theory quiz
 - [x] PWA manifest + service worker for full offline use (self-contained, CSP-compatible)
 - [ ] Keyboard shortcuts for quiz answering; accessibility pass (focus, ARIA, contrast)
 - [ ] Mobile/touch audit: 44px minimum tap targets on fretboard/keyboard hit areas, remove hover-only affordances, touch-action on controls, verify each tool at 390px width

@@ -39,12 +39,14 @@ import {
   checkAnswer,
   findAllTargetKeys,
   generateQuestion,
+  keyboardSrsStore,
   keyboardTrainerSettingsStore,
   keyKey,
   MAX_OCTAVE,
   MIN_OCTAVE,
   normalizeTrainerSettings,
   OCTAVE_RANGE_PRESETS,
+  srsKeyForPc,
   type FindAllQuestion,
   type KeyboardTrainerSettings,
   type QuestionContext,
@@ -52,6 +54,12 @@ import {
   type TrainerAnswer,
   type TrainerQuestion,
 } from '../lib/keyboardTrainer.ts'
+import {
+  normalizeSrsData,
+  qualityFromOutcome,
+  reviewKey,
+  type SrsData,
+} from '../lib/spacedRepetition.ts'
 
 const PITCH_CLASSES: PitchClass[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
@@ -87,9 +95,14 @@ export function KeyboardNoteTrainer() {
   const [noteStats, setNoteStats] = useState<NoteStatsData>(() =>
     normalizeNoteStats(keyboardStatsStore.get()),
   )
+  // Spaced-repetition schedule (per pitch class); blended into weakest-first
+  // picking so notes that are due for review resurface.
+  const [srs, setSrs] = useState<SrsData>(() => normalizeSrsData(keyboardSrsStore.get()))
   // Refs so the stable question generator reads the latest stats / toggle.
   const statsRef = useRef(noteStats)
   statsRef.current = noteStats
+  const srsRef = useRef(srs)
+  srsRef.current = srs
   const focusWeakRef = useRef(settings.focusWeak)
   focusWeakRef.current = settings.focusWeak
 
@@ -115,7 +128,10 @@ export function KeyboardNoteTrainer() {
   // Weakest-first picking parameters, or `undefined` when the toggle is off.
   // Reads refs so the (stable) generator always sees the current stats/toggle.
   const picking = useCallback(
-    () => (focusWeakRef.current ? { stats: statsRef.current, now: Date.now() } : undefined),
+    () =>
+      focusWeakRef.current
+        ? { stats: statsRef.current, now: Date.now(), srs: srsRef.current }
+        : undefined,
     [],
   )
 
@@ -209,9 +225,20 @@ export function KeyboardNoteTrainer() {
       const res = session.answer(answer)
       setResult(res)
       setStats(session.stats)
+      const now = Date.now()
       setNoteStats(
         keyboardStatsStore.update((d) =>
-          recordOutcome(d, res.question.pc, res.correct, res.responseMs, Date.now()),
+          recordOutcome(d, res.question.pc, res.correct, res.responseMs, now),
+        ),
+      )
+      setSrs(
+        keyboardSrsStore.update((d) =>
+          reviewKey(
+            d,
+            srsKeyForPc(res.question.pc),
+            qualityFromOutcome(res.correct, res.responseMs),
+            now,
+          ),
         ),
       )
 
@@ -250,11 +277,16 @@ export function KeyboardNoteTrainer() {
       if (res.justCompleted) {
         const q = session.current
         if (q) {
+          const now = Date.now()
           setNoteStats(
             keyboardStatsStore.update((d) =>
-              recordFindAllRound(d, [q.pc], q.pc, res.progress.mistakes, Date.now()),
+              recordFindAllRound(d, [q.pc], q.pc, res.progress.mistakes, now),
             ),
           )
+          // A clean round is a full pass; wrong taps drop the review quality
+          // below the pass threshold so the note is scheduled sooner.
+          const quality = res.progress.mistakes === 0 ? 1 : 0.4
+          setSrs(keyboardSrsStore.update((d) => reviewKey(d, srsKeyForPc(q.pc), quality, now)))
         }
         clearPendingAdvance()
         timeoutRef.current = window.setTimeout(advance, ADVANCE_MS_CORRECT)
@@ -293,6 +325,8 @@ export function KeyboardNoteTrainer() {
   const resetStats = useCallback(() => {
     keyboardStatsStore.clear()
     setNoteStats(emptyNoteStats())
+    keyboardSrsStore.clear()
+    setSrs({})
   }, [])
 
   const setOctave = (which: 'fromOctave' | 'toOctave', value: number): void => {

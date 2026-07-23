@@ -9,14 +9,16 @@ import {
   MAX_OCTAVE,
   normalizeTrainerSettings,
   possibleQuestions,
+  srsKeyForPc,
   type FindAllQuestion,
   type FindQuestion,
   type NameQuestion,
   type QuestionContext,
   type TrainerQuestion,
 } from './keyboardTrainer.ts'
-import { midiToPc, nameToMidi } from './theory/notes.ts'
+import { midiToPc, nameToMidi, type PitchClass } from './theory/notes.ts'
 import { memoryBackend } from './storage.ts'
+import { STEP_MS, type SrsData, type SrsItem } from './spacedRepetition.ts'
 import type { Rng } from './quiz.ts'
 
 function seq(...values: number[]): Rng {
@@ -26,6 +28,20 @@ function seq(...values: number[]): Rng {
     i += 1
     return v
   }
+}
+
+/** A seeded LCG for distribution tests — deterministic but well-spread. */
+function lcg(seed: number): Rng {
+  let state = seed >>> 0
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+}
+
+/** A reviewed SRS item due at `due`. */
+function srsItem(due: number): SrsItem {
+  return { interval: 1, ease: 2.5, due, lapses: 0, reps: 1, lastSeen: due }
 }
 
 function ctx(partial: Partial<QuestionContext>): QuestionContext {
@@ -158,6 +174,45 @@ describe('generateQuestion', () => {
     const c = ctx({ mode: 'name', fromMidi: c4, toMidi: c4 })
     const q = generateQuestion(c, null, seq(0)) as NameQuestion
     expect(q.midi).toBe(c4)
+  })
+})
+
+describe('generateQuestion — SRS-blended picking', () => {
+  const NOW = 5_000_000
+  // 'name' mode over one octave (C4..B4) → one question per pitch class, so
+  // the pick is a pure per-pc weighting decision.
+  const c = ctx({ mode: 'name', fromMidi: nameToMidi('C4'), toMidi: nameToMidi('B4') })
+
+  function pcCounts(srs: SrsData | undefined, n: number): Map<PitchClass, number> {
+    const rng = lcg(12345)
+    const counts = new Map<PitchClass, number>()
+    for (let i = 0; i < n; i++) {
+      const q = generateQuestion(c, null, rng, { stats: {}, now: NOW, srs })
+      counts.set(q.pc, (counts.get(q.pc) ?? 0) + 1)
+    }
+    return counts
+  }
+
+  it('biases toward overdue notes over not-yet-due ones (equal accuracy)', () => {
+    const srs: SrsData = {
+      [srsKeyForPc(0)]: srsItem(NOW - 5 * STEP_MS), // very overdue
+      [srsKeyForPc(1)]: srsItem(NOW + 100 * STEP_MS), // not due for ages
+    }
+    const counts = pcCounts(srs, 4000)
+    expect(counts.get(0) ?? 0).toBeGreaterThan((counts.get(1) ?? 0) * 3)
+  })
+
+  it('prioritises never-seen notes over a recently-reviewed, not-due note', () => {
+    const srs: SrsData = { [srsKeyForPc(1)]: srsItem(NOW + 100 * STEP_MS) }
+    const counts = pcCounts(srs, 4000)
+    const newAvg =
+      [0, 2, 3, 4, 5, 6].reduce((sum, pc) => sum + (counts.get(pc as PitchClass) ?? 0), 0) / 6
+    expect(newAvg).toBeGreaterThan((counts.get(1) ?? 0) * 2)
+  })
+
+  it('leaves picking unchanged when no srs is supplied', () => {
+    const counts = pcCounts(undefined, 4000)
+    for (let pc = 0; pc < 12; pc++) expect(counts.get(pc as PitchClass) ?? 0).toBeGreaterThan(0)
   })
 })
 
