@@ -10,6 +10,7 @@ import {
   segmentEndAngle,
   segmentLabelPosition,
   segmentStartAngle,
+  keySpellingPrefer,
   signatureLabel,
   signatureNotes,
 } from './circleGeometry.ts'
@@ -165,5 +166,24 @@ describe('segmentLabelPosition', () => {
     const pos = segmentLabelPosition(100, 100, 70, 3)
     const expected = polarToCartesian(100, 100, 70, segmentCenterAngle(3))
     expect(pos).toEqual(expected)
+  })
+})
+
+describe('keySpellingPrefer', () => {
+  it('uses the shared key signature for both the major and relative minor view', () => {
+    // B major (5 sharps) — its relative minor G# must also spell with sharps,
+    // never as Ab minor (regression: minor pc was misread as a major root).
+    const b = circleKeyForMajorPc(11)
+    expect(b.minorName).toBe('G#')
+    expect(keySpellingPrefer(b)).toBe('sharp')
+
+    const f = circleKeyForMajorPc(5) // F major, 1 flat → D minor in flats
+    expect(keySpellingPrefer(f)).toBe('flat')
+
+    const c = circleKeyForMajorPc(0) // C major, no accidentals → sharp default
+    expect(keySpellingPrefer(c)).toBe('sharp')
+
+    const fSharp = circleKeyForMajorPc(6) // F#/Gb: primary spelling is F# (6♯)
+    expect(keySpellingPrefer(fSharp)).toBe('sharp')
   })
 })

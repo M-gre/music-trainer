@@ -110,6 +110,17 @@ export function circleKeyForMajorPc(pc: PitchClass): CircleKey {
 }
 
 /** Format a signed accidental count as e.g. "3♯", "2♭", or "0". */
+/**
+ * Sharp/flat naming preference for a circle key. A relative minor shares its
+ * major key's signature, so both views of one key spell the same way — e.g.
+ * B major / G# minor (5♯) use sharps; F major / D minor (1♭) use flats.
+ * Never derive this by treating the minor tonic as a major root (G# minor
+ * would wrongly resolve to Ab major's flats).
+ */
+export function keySpellingPrefer(key: Pick<CircleKey, 'signature'>): 'sharp' | 'flat' {
+  return key.signature < 0 ? 'flat' : 'sharp'
+}
+
 export function signatureLabel(signature: number): string {
   if (signature === 0) return '0'
   return `${Math.abs(signature)}${signature > 0 ? '♯' : '♭'}`

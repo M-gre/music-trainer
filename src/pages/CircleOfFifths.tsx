@@ -27,6 +27,7 @@ import {
   CIRCLE_KEYS,
   ringSegmentPath,
   segmentEndAngle,
+  keySpellingPrefer,
   segmentLabelPosition,
   segmentStartAngle,
   signatureLabel,
@@ -141,7 +142,7 @@ export function CircleOfFifths() {
   const activeRootPc = scaleView === 'major' ? selected.majorPc : selected.minorPc
   const activeIntervals = scaleView === 'major' ? MAJOR_INTERVALS : MINOR_INTERVALS
   const activeRootName = scaleView === 'major' ? selected.majorName : selected.minorName
-  const activePrefer = prefersFlats(activeRootPc) ? 'flat' : 'sharp'
+  const activePrefer = keySpellingPrefer(selected)
 
   const fretMarkers = useMemo(
     () => buildFretboardMarkers(tuning, 0, 12, activeRootPc, activeIntervals, { display: 'names', prefer: activePrefer }),
