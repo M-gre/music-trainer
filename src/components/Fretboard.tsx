@@ -10,8 +10,15 @@
  * The neck is horizontal with the lowest-pitched string at the bottom
  * (standard tab orientation). The SVG scales responsively to its container
  * width via a `viewBox`. All geometry lives in `fretboardGeometry.ts`.
+ *
+ * The only global state it reads is the display preferences
+ * (`useGlobalSettings`): left-handed orientation and accidental spelling.
+ * Callers may still override either via the `leftHanded` / `prefer` props, but
+ * when omitted every tool inherits the user's global choice with no wiring.
  */
 
+import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
+import { applySpellingPreference } from '../lib/globalSettings.ts'
 import { fretMidi, type Tuning } from '../lib/theory/instruments.ts'
 import {
   computeLayout,
@@ -19,6 +26,7 @@ import {
   DEFAULT_LAYOUT,
   type FretboardLayoutConfig,
   inlayDots,
+  mirrorX,
   noteX,
   stringStrokeWidth,
   stringY,
@@ -60,9 +68,17 @@ export interface FretboardProps {
   onFretClick?: (pos: FretPosition) => void
   /** Show fret-number labels beneath inlay positions. Default true. */
   showFretNumbers?: boolean
-  /** Mirror the neck horizontally for left-handed players. Default false. */
+  /**
+   * Mirror the neck horizontally for left-handed players. When omitted, the
+   * global left-handed setting (`src/lib/globalSettings.ts`) is used, so every
+   * tool inherits the preference without extra wiring.
+   */
   leftHanded?: boolean
-  /** Accidental spelling for default marker labels. Default `'sharp'`. */
+  /**
+   * Accidental spelling for default marker labels (the tool's context-dependent
+   * choice). The global spelling preference is applied on top: `'auto'` keeps
+   * this value, `'sharps'`/`'flats'` override it. Defaults to `'sharp'`.
+   */
   prefer?: 'sharp' | 'flat'
   /** Pixel layout overrides (partial). */
   layoutConfig?: Partial<FretboardLayoutConfig>
@@ -79,18 +95,23 @@ export function Fretboard({
   markers = [],
   onFretClick,
   showFretNumbers = true,
-  leftHanded = false,
+  leftHanded,
   prefer = 'sharp',
   layoutConfig,
   className,
   ariaLabel,
 }: FretboardProps) {
+  const { settings } = useGlobalSettings()
+  // A caller-supplied prop always wins; otherwise inherit the global defaults.
+  const resolvedLeftHanded = leftHanded ?? settings.leftHanded
+  const resolvedPrefer = applySpellingPreference(settings.spellingPreference, prefer)
+
   const stringCount = tuning.strings.length
   const config: FretboardLayoutConfig = { ...DEFAULT_LAYOUT, ...layoutConfig }
   const layout = computeLayout(fromFret, toFret, stringCount, showFretNumbers, config)
 
   // Mirror x for left-handed layouts while keeping labels upright.
-  const mx = (x: number): number => (leftHanded ? layout.width - x : x)
+  const mx = (x: number): number => (resolvedLeftHanded ? mirrorX(layout, x) : x)
 
   const stringIndexes = Array.from({ length: stringCount }, (_, i) => i)
   // Fret wires from the leftmost boundary (nut or firstFret-1) through toFret.
@@ -207,7 +228,7 @@ export function Fretboard({
       {/* Markers */}
       {markers.map((m) => {
         const midi = fretMidi(tuning, m.string, m.fret)
-        const label = m.label ?? defaultMarkerLabel(midi, prefer)
+        const label = m.label ?? defaultMarkerLabel(midi, resolvedPrefer)
         const variant = m.variant ?? 'default'
         const cx = mx(noteX(layout, m.fret))
         const cy = stringY(layout, m.string)

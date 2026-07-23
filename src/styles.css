@@ -3892,3 +3892,119 @@ a.tool-card:hover {
     font-size: 1.6rem;
   }
 }
+
+/* ---- Settings page ---- */
+
+.set-sections {
+  flex-direction: column;
+}
+
+.set-section {
+  flex: 1 1 auto;
+  gap: 0.9rem;
+}
+
+.set-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.set-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.set-toggle input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--accent);
+}
+
+.set-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.set-field-label {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.set-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.set-radio {
+  min-height: 44px;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.set-radio:hover {
+  border-color: var(--accent-dim);
+}
+
+.set-radio-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  color: var(--accent);
+}
+
+.set-preview {
+  margin-top: 0.3rem;
+  max-width: 32rem;
+}
+
+.set-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.set-slider {
+  flex: 1 1 auto;
+  accent-color: var(--accent);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.set-volume-value {
+  min-width: 3rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.set-test-tone {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid var(--accent-dim);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 0.88rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.set-test-tone:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+}
