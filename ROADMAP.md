@@ -43,6 +43,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 ## M4 — Rhythm & play-along
 
+- [ ] Metronome sound & accent upgrade: selectable click sounds synthesized via Web Audio (e.g. soft woodblock, sine blip, rim tick, classic beep — current square click is harsh), volume-balanced presets; per-beat accent editor — tap a beat dot to cycle its accent level (off / low / mid / high), persisted with the other metronome settings
 - [ ] Drum synthesis: kick, snare, hi-hat (closed/open), ride via Web Audio (noise + filters + envelopes)
 - [ ] Groove engine: pattern format (16-step grid per drum voice), grooves: rock 8ths, rock 16ths, funk, swing/shuffle, bossa, 12/8 blues, half-time
 - [ ] Play-Along page: groove picker, tempo slider, count-in, per-voice mute
