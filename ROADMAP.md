@@ -42,7 +42,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [x] Chord quality recognition: triads + sevenths, root position first, inversions as harder setting
 - [x] Scale/mode recognition quiz
 - [x] Melodic echo: app plays a short diatonic phrase, user plays it back on the on-screen fretboard/keyboard
-- [ ] Progressive difficulty levels bundling the above (Level 1: P4/P5/P8 … etc.)
+- [x] Progressive difficulty levels bundling the above (Level 1: P4/P5/P8 … etc.)
 
 ## M4 — Rhythm & play-along
 
