@@ -4733,3 +4733,26 @@ summary:focus-visible,
   gap: 0.5rem;
 }
 
+
+/* --- Piano dexterity mode (M5) --- */
+.dx-mode {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  max-width: 22rem;
+}
+
+.dx-mode .dx-segment {
+  flex: 1 1 8rem;
+}
+
+.dx-piano-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.dx-piano-toggles .dx-setting {
+  flex: 1 1 10rem;
+}

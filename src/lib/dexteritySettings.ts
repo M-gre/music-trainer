@@ -12,9 +12,10 @@
  * arpeggio-drill fields (`arpRootPc`, `arpQualityId`, `arpInversion`) and the
  * `'arpeggio'` mode. v5 replaced the `notesPerBeat` subdivision with the richer
  * rhythm-variation layer (`rhythmId`, `accentEveryN`) — a v4 record's old
- * `notesPerBeat` is used to pick the matching even rhythm on migration. Older
- * data is migrated by filling any missing field in with its default
- * (`normalizeDexteritySettings` handles every version).
+ * `notesPerBeat` is used to pick the matching even rhythm on migration. v6
+ * added the piano-exercise fields (`pianoMode` and the `piano*` choices) for
+ * the keyboard drills. Older data is migrated by filling any missing field in
+ * with its default (`normalizeDexteritySettings` handles every version).
  */
 
 import {
@@ -33,6 +34,21 @@ import {
   type Direction,
 } from './exercises.ts'
 import { isPermutationId } from './permutations.ts'
+import {
+  clampPianoOctave,
+  DEFAULT_FIVE_FINGER_PATTERN_ID,
+  DEFAULT_PIANO_EXERCISE_KIND,
+  type FiveFingerPatternId,
+  type FiveFingerQuality,
+  type Hand,
+  isFiveFingerPatternId,
+  isFiveFingerQuality,
+  isHand,
+  isPianoExerciseKind,
+  isScaleOctaves,
+  type PianoExerciseKind,
+  type ScaleOctaves,
+} from './pianoExercises.ts'
 import {
   type AccentEveryN,
   DEFAULT_RHYTHM_ID,
@@ -92,6 +108,22 @@ export interface DexteritySettings {
   advanceMax: number
   /** Playback direction: forward, reverse, or forward-then-reverse. */
   direction: Direction
+  /** Whether the tool is in piano (keyboard) mode instead of the fretted modes. */
+  pianoMode: boolean
+  /** Which piano exercise family is showing (five-finger patterns or scales). */
+  pianoKind: PianoExerciseKind
+  /** Root pitch class 0–11 for the piano exercise. */
+  pianoRootPc: number
+  /** Root octave (scientific pitch, C4 = middle C) for the piano exercise. */
+  pianoOctave: number
+  /** Major/minor quality (used by the five-finger patterns). */
+  pianoQuality: FiveFingerQuality
+  /** Chosen five-finger pattern variation. */
+  pianoPatternId: FiveFingerPatternId
+  /** Which hand the piano exercise is fingered/played for. */
+  pianoHand: Hand
+  /** Octave count for the piano scale drill (1 or 2). */
+  pianoOctaves: ScaleOctaves
 }
 
 export const DEFAULT_DEXTERITY_SETTINGS: DexteritySettings = {
@@ -111,6 +143,14 @@ export const DEFAULT_DEXTERITY_SETTINGS: DexteritySettings = {
   advanceMin: 1,
   advanceMax: 12,
   direction: DEFAULT_DIRECTION,
+  pianoMode: false,
+  pianoKind: DEFAULT_PIANO_EXERCISE_KIND,
+  pianoRootPc: 0,
+  pianoOctave: 4,
+  pianoQuality: 'major',
+  pianoPatternId: DEFAULT_FIVE_FINGER_PATTERN_ID,
+  pianoHand: 'right',
+  pianoOctaves: 1,
 }
 
 /** Clamp a tempo into `[MIN_BPM, MAX_BPM]`; NaN falls back to the default. */
@@ -189,6 +229,27 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
       ? (v.direction as Direction)
       : DEFAULT_DEXTERITY_SETTINGS.direction
 
+  const pianoMode = typeof v.pianoMode === 'boolean' ? v.pianoMode : DEFAULT_DEXTERITY_SETTINGS.pianoMode
+  const pianoKind: PianoExerciseKind = isPianoExerciseKind(v.pianoKind)
+    ? v.pianoKind
+    : DEFAULT_DEXTERITY_SETTINGS.pianoKind
+  const pianoRootPc =
+    typeof v.pianoRootPc === 'number' && Number.isFinite(v.pianoRootPc)
+      ? mod12(Math.round(v.pianoRootPc))
+      : DEFAULT_DEXTERITY_SETTINGS.pianoRootPc
+  const pianoOctave =
+    typeof v.pianoOctave === 'number' ? clampPianoOctave(v.pianoOctave) : DEFAULT_DEXTERITY_SETTINGS.pianoOctave
+  const pianoQuality: FiveFingerQuality = isFiveFingerQuality(v.pianoQuality)
+    ? v.pianoQuality
+    : DEFAULT_DEXTERITY_SETTINGS.pianoQuality
+  const pianoPatternId: FiveFingerPatternId = isFiveFingerPatternId(v.pianoPatternId)
+    ? v.pianoPatternId
+    : DEFAULT_DEXTERITY_SETTINGS.pianoPatternId
+  const pianoHand: Hand = isHand(v.pianoHand) ? v.pianoHand : DEFAULT_DEXTERITY_SETTINGS.pianoHand
+  const pianoOctaves: ScaleOctaves = isScaleOctaves(v.pianoOctaves)
+    ? v.pianoOctaves
+    : DEFAULT_DEXTERITY_SETTINGS.pianoOctaves
+
   return {
     mode,
     patternId,
@@ -206,6 +267,14 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
     advanceMin,
     advanceMax,
     direction,
+    pianoMode,
+    pianoKind,
+    pianoRootPc,
+    pianoOctave,
+    pianoQuality,
+    pianoPatternId,
+    pianoHand,
+    pianoOctaves,
   }
 }
 
@@ -214,9 +283,10 @@ export function normalizeDexteritySettings(value: unknown): DexteritySettings {
  * v2 lacked the scale-sequence fields (`mode`, `scaleRootPc`, `scaleId`,
  * `sequenceId`); v3 lacked the arpeggio fields (`arpRootPc`, `arpQualityId`,
  * `arpInversion`); v4 used `notesPerBeat` instead of the rhythm layer
- * (`rhythmId`, `accentEveryN`). `normalizeDexteritySettings` fills every missing
- * field in with its default (deriving `rhythmId` from a legacy `notesPerBeat`),
- * so a single pass upgrades data from any prior version.
+ * (`rhythmId`, `accentEveryN`); v5 lacked the piano fields (`pianoMode` and the
+ * `piano*` choices). `normalizeDexteritySettings` fills every missing field in
+ * with its default (deriving `rhythmId` from a legacy `notesPerBeat`), so a
+ * single pass upgrades data from any prior version.
  */
 export function migrateDexteritySettings(oldData: unknown): DexteritySettings {
   return normalizeDexteritySettings(oldData)
@@ -227,7 +297,7 @@ export function createDexteritySettingsStore(backend?: StorageBackend): Store<De
   return new Store<DexteritySettings>(
     {
       key: 'settings:dexterity',
-      version: 5,
+      version: 6,
       defaultValue: DEFAULT_DEXTERITY_SETTINGS,
       migrate: migrateDexteritySettings,
     },
