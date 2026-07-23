@@ -559,3 +559,188 @@ a.tool-card:hover {
 .mn-tap:active {
   background: var(--bg-hover);
 }
+
+/* ---- Staff SVG component ---- */
+
+.st-staff {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  font-family: inherit;
+}
+
+.st-line,
+.st-ledger {
+  stroke: var(--text-dim);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.st-clef {
+  stroke: var(--text);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.st-clef-dot {
+  fill: var(--text);
+}
+
+.st-accidental {
+  fill: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.st-note ellipse {
+  fill: var(--text);
+}
+
+.st-note .st-note-hole {
+  fill: var(--bg);
+}
+
+/* ---- Note Reading tool ---- */
+
+.nr-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.nr-segment {
+  flex: 1 1 4rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.nr-segment:hover {
+  border-color: var(--accent-dim);
+}
+
+.nr-segment-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.nr-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 120ms ease;
+}
+
+.nr-stage-correct {
+  border-color: #3f9d58;
+}
+
+.nr-stage-wrong {
+  border-color: #b8433a;
+}
+
+.nr-staff {
+  max-width: 360px;
+}
+
+.nr-feedback {
+  min-height: 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.nr-prompt {
+  color: var(--text-dim);
+}
+
+.nr-correct {
+  color: #58c06f;
+}
+
+.nr-wrong {
+  color: #e2695f;
+}
+
+.nr-scores {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.nr-score {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.75rem 0.5rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.nr-score-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.nr-score-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.nr-answer {
+  min-height: 3rem;
+}
+
+.nr-names {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.4rem;
+}
+
+.nr-name {
+  min-height: 3rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.nr-name:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.nr-name:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 420px) {
+  .nr-names {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
