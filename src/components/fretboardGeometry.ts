@@ -50,6 +50,31 @@ export function defaultMarkerLabel(midi: number, prefer: 'sharp' | 'flat' = 'sha
   return pcToName(midiToPc(midi), prefer)
 }
 
+/** Marker dot radius as a fraction of the smaller cell dimension. */
+export const MARKER_RADIUS_RATIO = 0.4
+/** Fret-inlay dot radius as a fraction of the smaller cell dimension. */
+export const INLAY_RADIUS_RATIO = 0.16
+/** Font size (px) of the fret-number labels; the reserved gutter sizes to it. */
+export const FRET_NUMBER_FONT_SIZE = 11
+/** Clear space between the lowest-string marker's edge and the number's top. */
+const FRET_NUMBER_TOP_GAP = 5
+/** Room left below the number baseline for its descenders. */
+const FRET_NUMBER_DESCENT = 4
+
+/**
+ * Radius of a marker dot in px. A marker sits on a string row, so on the lowest
+ * (bottom) string it reaches `boardBottom + markerRadius` — the value the
+ * fret-number gutter must clear so numbers never sit under a dot.
+ */
+export function markerRadius(config: FretboardLayoutConfig): number {
+  return Math.min(config.stringSpacing, config.fretWidth) * MARKER_RADIUS_RATIO
+}
+
+/** Radius of a fret-inlay dot in px (smaller than a marker). */
+export function inlayRadius(config: FretboardLayoutConfig): number {
+  return Math.min(config.stringSpacing, config.fretWidth) * INLAY_RADIUS_RATIO
+}
+
 /**
  * String stroke width in px. Lower strings (smaller index) are drawn thicker,
  * as on a real instrument. With a single string the max width is used.
@@ -106,6 +131,13 @@ export interface FretboardLayout {
   boardRight: number
   boardTop: number
   boardBottom: number
+  /**
+   * Reserved space (px) below the board for fret numbers, 0 when they are
+   * hidden. Sized so a bottom-string marker can never reach the numbers.
+   */
+  labelGutter: number
+  /** Baseline y of the fret-number row, inside the reserved gutter. */
+  fretNumberY: number
   width: number
   height: number
 }
@@ -132,9 +164,17 @@ export function computeLayout(
   const boardTop = config.marginTop
   const boardBottom = boardTop + (strings - 1) * config.stringSpacing
 
+  // Reserve a gutter tall enough that the number row clears the reach of a
+  // marker sitting on the bottom string (`boardBottom + markerRadius`). The
+  // configured `labelGutter` is a floor, so custom layouts stay at least as
+  // roomy as before.
+  const dotR = markerRadius(config)
+  const requiredGutter = dotR + FRET_NUMBER_TOP_GAP + FRET_NUMBER_FONT_SIZE + FRET_NUMBER_DESCENT
+  const labelGutter = showFretNumbers ? Math.max(config.labelGutter, requiredGutter) : 0
+  const fretNumberY = boardBottom + dotR + FRET_NUMBER_TOP_GAP + FRET_NUMBER_FONT_SIZE
+
   const width = boardRight + config.marginRight
-  const height =
-    boardBottom + config.marginBottom + (showFretNumbers ? config.labelGutter : 0)
+  const height = boardBottom + config.marginBottom + labelGutter
 
   return {
     config,
@@ -148,6 +188,8 @@ export function computeLayout(
     boardRight,
     boardTop,
     boardBottom,
+    labelGutter,
+    fretNumberY,
     width,
     height,
   }
@@ -189,4 +231,27 @@ export function stringY(layout: FretboardLayout, stringIndex: number): number {
  */
 export function mirrorX(layout: FretboardLayout, x: number): number {
   return layout.width - x
+}
+
+/**
+ * Y of the centre single inlay dot. It sits on the neck's mid-line, but on an
+ * odd string count that line coincides with the centre string row — where a
+ * marker would sit and hide the inlay — so it is nudged half a string-spacing
+ * into the adjacent gap. On an even string count the mid-line already falls in
+ * a gap and is returned unchanged. Keeping inlays off string rows lets them
+ * read even when markers occupy the same fret.
+ */
+export function inlayCenterY(layout: FretboardLayout): number {
+  const midY = (layout.boardTop + layout.boardBottom) / 2
+  const onStringRow = layout.stringCount % 2 === 1
+  return onStringRow ? midY + layout.config.stringSpacing / 2 : midY
+}
+
+/**
+ * Vertical offset of each dot of a double (octave) inlay from `inlayCenterY`.
+ * A full string-spacing keeps both dots in string gaps (parallel to the centre
+ * gap) regardless of string parity, so they clear the string rows markers use.
+ */
+export function inlayDoubleOffset(layout: FretboardLayout): number {
+  return layout.config.stringSpacing
 }

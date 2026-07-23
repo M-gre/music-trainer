@@ -97,7 +97,7 @@ export function Keyboard({
   const octRange = octaveRangeToMidi(fromOctave, toOctave)
   const rawFrom = from ?? octRange.from
   const rawTo = to ?? octRange.to
-  const layout = computeLayout(rawFrom, rawTo, config)
+  const layout = computeLayout(rawFrom, rawTo, config, showLabels !== 'none')
 
   const whites = whiteKeyMidis(layout.from, layout.to)
   const blacks = blackKeyMidis(layout.from, layout.to)
@@ -150,13 +150,14 @@ export function Keyboard({
         />
       ))}
 
-      {/* Static white-key name labels near the bottom of each key */}
+      {/* Static white-key name labels in the reserved strip below the keys, so
+          marker dots (which sit on the keys) never cover them */}
       {whites.filter(showWhiteLabel).map((midi) => (
         <text
           key={`label-${midi}`}
           className="kb-key-label"
           x={keyCenterX(layout, midi)}
-          y={layout.boardTop + layout.whiteHeight - 6}
+          y={layout.labelBaselineY}
           textAnchor="middle"
         >
           {defaultKeyLabel(midi, resolvedPrefer, true)}

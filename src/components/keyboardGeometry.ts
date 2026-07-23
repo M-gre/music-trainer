@@ -113,6 +113,12 @@ export interface KeyboardLayoutConfig {
   blackHeightRatio: number
   /** Uniform margin around the keybed. */
   margin: number
+  /**
+   * Height reserved below the keys for static name labels (e.g. `C4`), so they
+   * sit in their own strip where marker dots — which live on the keys — never
+   * cover them. Only reserved when labels are shown.
+   */
+  labelStrip: number
 }
 
 export const DEFAULT_LAYOUT: KeyboardLayoutConfig = {
@@ -121,7 +127,12 @@ export const DEFAULT_LAYOUT: KeyboardLayoutConfig = {
   blackWidthRatio: 0.6,
   blackHeightRatio: 0.62,
   margin: 8,
+  labelStrip: 18,
 }
+/** Font size (px) of the static key-name labels in the reserved strip. */
+export const KEY_LABEL_FONT_SIZE = 11
+/** Descender room left below the label baseline within the strip. */
+const KEY_LABEL_DESCENT = 4
 
 /** Fully-resolved layout: snapped range plus derived pixel coordinates. */
 export interface KeyboardLayout {
@@ -137,18 +148,25 @@ export interface KeyboardLayout {
   blackHeight: number
   boardLeft: number
   boardTop: number
+  /** Reserved label-strip height below the keys, 0 when labels are hidden. */
+  labelStrip: number
+  /** Baseline y of the static key-name labels, inside the reserved strip. */
+  labelBaselineY: number
   width: number
   height: number
 }
 
 /**
  * Compute the SVG layout for a midi range and config. The range is snapped to
- * white keys first. Pure: same inputs always produce the same coordinates.
+ * white keys first. When `reserveLabelStrip` is set, extra height is reserved
+ * below the keys for static name labels so they never sit under marker dots.
+ * Pure: same inputs always produce the same coordinates.
  */
 export function computeLayout(
   from: number,
   to: number,
   config: KeyboardLayoutConfig = DEFAULT_LAYOUT,
+  reserveLabelStrip = false,
 ): KeyboardLayout {
   const snapped = snapRangeToWhite(from, to)
   const whiteCount = whiteKeyMidis(snapped.from, snapped.to).length
@@ -156,8 +174,11 @@ export function computeLayout(
   const blackHeight = config.whiteHeight * config.blackHeightRatio
   const boardLeft = config.margin
   const boardTop = config.margin
+  const labelStrip = reserveLabelStrip ? config.labelStrip : 0
+  const keysBottom = boardTop + config.whiteHeight
+  const labelBaselineY = keysBottom + labelStrip - KEY_LABEL_DESCENT
   const width = boardLeft + whiteCount * config.whiteWidth + config.margin
-  const height = boardTop + config.whiteHeight + config.margin
+  const height = keysBottom + labelStrip + config.margin
 
   return {
     config,
@@ -170,6 +191,8 @@ export function computeLayout(
     blackHeight,
     boardLeft,
     boardTop,
+    labelStrip,
+    labelBaselineY,
     width,
     height,
   }

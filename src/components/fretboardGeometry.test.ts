@@ -4,7 +4,12 @@ import {
   computeLayout,
   DEFAULT_LAYOUT,
   defaultMarkerLabel,
+  FRET_NUMBER_FONT_SIZE,
+  inlayCenterY,
   inlayDots,
+  inlayDoubleOffset,
+  inlayRadius,
+  markerRadius,
   mirrorX,
   noteX,
   stringStrokeWidth,
@@ -98,10 +103,17 @@ describe('computeLayout', () => {
     expect(six.boardBottom).toBeGreaterThan(four.boardBottom)
   })
 
-  it('adds label gutter only when fret numbers are shown', () => {
+  it('adds a label gutter only when fret numbers are shown', () => {
     const withNums = computeLayout(0, 12, 4, true)
     const without = computeLayout(0, 12, 4, false)
-    expect(withNums.height - without.height).toBe(DEFAULT_LAYOUT.labelGutter)
+    expect(without.labelGutter).toBe(0)
+    expect(withNums.labelGutter).toBeGreaterThan(0)
+    expect(withNums.height - without.height).toBe(withNums.labelGutter)
+  })
+
+  it('reserves a gutter no smaller than the configured floor', () => {
+    const layout = computeLayout(0, 12, 4, true)
+    expect(layout.labelGutter).toBeGreaterThanOrEqual(DEFAULT_LAYOUT.labelGutter)
   })
 
   it('guards against an inverted range', () => {
@@ -131,6 +143,69 @@ describe('coordinate helpers', () => {
     expect(stringY(layout, 0)).toBeGreaterThan(stringY(layout, 3))
     expect(stringY(layout, 3)).toBe(layout.boardTop)
     expect(stringY(layout, 0)).toBe(layout.boardBottom)
+  })
+})
+
+describe('marker and inlay radii', () => {
+  it('makes markers larger than inlays', () => {
+    expect(markerRadius(DEFAULT_LAYOUT)).toBeGreaterThan(inlayRadius(DEFAULT_LAYOUT))
+  })
+
+  it('scales both radii with the smaller cell dimension', () => {
+    const narrow = { ...DEFAULT_LAYOUT, stringSpacing: 10 }
+    expect(markerRadius(narrow)).toBeLessThan(markerRadius(DEFAULT_LAYOUT))
+    expect(inlayRadius(narrow)).toBeLessThan(inlayRadius(DEFAULT_LAYOUT))
+  })
+})
+
+describe('fret-number gutter never sits under a marker', () => {
+  for (const strings of [4, 5, 6, 7]) {
+    it(`clears the bottom-string marker for a ${strings}-string board`, () => {
+      const layout = computeLayout(0, 12, strings, true)
+      // The bottom string is at boardBottom; a marker there reaches this y.
+      const markerBottom = layout.boardBottom + markerRadius(DEFAULT_LAYOUT)
+      // The number's topmost pixel (baseline minus cap height) must clear it.
+      const numberTop = layout.fretNumberY - FRET_NUMBER_FONT_SIZE
+      expect(numberTop).toBeGreaterThanOrEqual(markerBottom)
+      // And the whole number row must fit inside the reserved gutter.
+      expect(layout.fretNumberY).toBeLessThanOrEqual(layout.boardBottom + layout.labelGutter)
+    })
+  }
+})
+
+describe('inlay positions avoid string rows', () => {
+  function stringYs(layout: ReturnType<typeof computeLayout>): number[] {
+    return Array.from({ length: layout.stringCount }, (_, s) => stringY(layout, s))
+  }
+
+  it('keeps the single inlay off every string row (even and odd counts)', () => {
+    for (const strings of [4, 5, 6, 7]) {
+      const layout = computeLayout(0, 12, strings, true)
+      const cy = inlayCenterY(layout)
+      for (const y of stringYs(layout)) {
+        expect(Math.abs(cy - y)).toBeGreaterThan(inlayRadius(DEFAULT_LAYOUT))
+      }
+    }
+  })
+
+  it('keeps both dots of a double inlay off every string row', () => {
+    for (const strings of [4, 5, 6, 7]) {
+      const layout = computeLayout(0, 12, strings, true)
+      const cy = inlayCenterY(layout)
+      const off = inlayDoubleOffset(layout)
+      for (const dotY of [cy - off, cy + off]) {
+        for (const y of stringYs(layout)) {
+          expect(Math.abs(dotY - y)).toBeGreaterThan(inlayRadius(DEFAULT_LAYOUT))
+        }
+      }
+    }
+  })
+
+  it('leaves an even-string mid-line unchanged but nudges an odd one', () => {
+    const even = computeLayout(0, 12, 4, true)
+    expect(inlayCenterY(even)).toBe((even.boardTop + even.boardBottom) / 2)
+    const odd = computeLayout(0, 12, 5, true)
+    expect(inlayCenterY(odd)).not.toBe((odd.boardTop + odd.boardBottom) / 2)
   })
 })
 

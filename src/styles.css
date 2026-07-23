@@ -261,7 +261,7 @@ a.tool-card:hover {
 }
 
 .kb-key-label {
-  fill: #5a5f68;
+  fill: var(--text-dim);
   font-size: 11px;
   font-weight: 600;
   pointer-events: none;

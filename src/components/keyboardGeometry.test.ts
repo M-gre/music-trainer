@@ -165,6 +165,23 @@ describe('computeLayout', () => {
     const two = computeLayout(nameToMidi('C3'), nameToMidi('B4'))
     expect(two.width).toBeGreaterThan(one.width)
   })
+
+  it('reserves a label strip below the keys only when asked', () => {
+    const bare = computeLayout(nameToMidi('C4'), nameToMidi('B4'), DEFAULT_LAYOUT, false)
+    const labelled = computeLayout(nameToMidi('C4'), nameToMidi('B4'), DEFAULT_LAYOUT, true)
+    expect(bare.labelStrip).toBe(0)
+    expect(labelled.labelStrip).toBe(DEFAULT_LAYOUT.labelStrip)
+    expect(labelled.height - bare.height).toBe(DEFAULT_LAYOUT.labelStrip)
+  })
+
+  it('places the label baseline below the keys where dots never sit', () => {
+    const layout = computeLayout(nameToMidi('C4'), nameToMidi('B4'), DEFAULT_LAYOUT, true)
+    const keysBottom = layout.boardTop + layout.whiteHeight
+    // Marker dots live on the keys, so their reach is above keysBottom; the
+    // label baseline must clear it.
+    expect(layout.labelBaselineY).toBeGreaterThan(keysBottom)
+    expect(layout.labelBaselineY).toBeLessThanOrEqual(layout.height)
+  })
 })
 
 describe('coordinate helpers', () => {
