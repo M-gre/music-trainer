@@ -14,6 +14,13 @@ describe('resolveTuningId', () => {
   it('falls back to the default tuning for an empty id', () => {
     expect(resolveTuningId('').id).toBe(DEFAULT_TUNING_ID)
   })
+
+  it('falls back to the default tuning for a stale/deleted custom id', () => {
+    // A tool may have persisted a custom id as the global default before the
+    // tuning was deleted (or before storage was cleared). The resolver must
+    // still return a valid built-in rather than throwing.
+    expect(resolveTuningId('custom:since-deleted').id).toBe(DEFAULT_TUNING_ID)
+  })
 })
 
 describe('instrument settings store', () => {

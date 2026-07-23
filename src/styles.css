@@ -4218,3 +4218,222 @@ a.tool-card:hover {
   font-size: 0.8rem;
   text-align: center;
 }
+
+/* ---- Custom tuning editor (Settings page) ---- */
+
+.ct-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ct-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ct-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.ct-item-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ct-item-meta {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.ct-item-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.ct-btn {
+  min-height: 44px;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ct-btn:hover {
+  border-color: var(--accent-dim);
+}
+
+.ct-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ct-btn-primary {
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  color: var(--accent);
+}
+
+.ct-btn-primary:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 26%, var(--bg));
+}
+
+.ct-btn-danger {
+  color: var(--danger, #e06c75);
+}
+
+.ct-btn-danger:hover {
+  border-color: var(--danger, #e06c75);
+}
+
+.ct-add {
+  align-self: flex-start;
+}
+
+.ct-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.9rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.ct-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.ct-field-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.ct-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
+.ct-field-row .ct-field {
+  flex: 1 1 8rem;
+}
+
+.ct-text {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  min-height: 44px;
+}
+
+.ct-text:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ct-strings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ct-string-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ct-string-index {
+  flex: 0 0 auto;
+  width: 1.4rem;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.ct-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.ct-step {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ct-step:hover {
+  border-color: var(--accent-dim);
+}
+
+.ct-step:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ct-note {
+  min-width: 3.2rem;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ct-error {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--danger, #e06c75);
+}
+
+.ct-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

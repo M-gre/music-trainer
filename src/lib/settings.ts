@@ -5,8 +5,9 @@
  * survives reloads and new tools get a sensible default with zero wiring.
  */
 
+import { customTuningsStore, resolveTuning } from './customTunings.ts'
 import { Store, type StorageBackend } from './storage.ts'
-import { getTuning, type Tuning } from './theory/instruments.ts'
+import { type Tuning } from './theory/instruments.ts'
 
 /** Default tuning for a brand-new visitor (and the fallback for stale ids). */
 export const DEFAULT_TUNING_ID = 'bass-4'
@@ -36,14 +37,12 @@ export function createInstrumentSettingsStore(backend?: StorageBackend): Store<I
 export const instrumentSettingsStore = createInstrumentSettingsStore()
 
 /**
- * Resolve a persisted tuning id to a `Tuning`, falling back to the default
- * tuning when the id is invalid or stale (e.g. a tuning removed or renamed
- * in a later release, or hand-edited storage).
+ * Resolve a persisted tuning id to a `Tuning`, checking built-ins then the
+ * user's custom tunings, and falling back to the default tuning when the id is
+ * invalid or stale (e.g. a built-in removed/renamed in a later release, a
+ * custom tuning deleted after being set as the default, or hand-edited
+ * storage).
  */
 export function resolveTuningId(tuningId: string): Tuning {
-  try {
-    return getTuning(tuningId)
-  } catch {
-    return getTuning(DEFAULT_TUNING_ID)
-  }
+  return resolveTuning(tuningId, customTuningsStore.get(), DEFAULT_TUNING_ID)
 }

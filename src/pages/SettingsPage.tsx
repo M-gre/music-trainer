@@ -14,6 +14,7 @@
  */
 
 import { useRef } from 'react'
+import { CustomTuningEditor } from '../components/CustomTuningEditor.tsx'
 import { Fretboard, type FretboardMarker } from '../components/Fretboard.tsx'
 import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
 import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
@@ -91,6 +92,8 @@ export function SettingsPage() {
           <InstrumentPicker />
           <p className="set-hint">The starting instrument and tuning for every fretboard tool.</p>
         </section>
+
+        <CustomTuningEditor />
 
         <section className="tool-control-group set-section">
           <span className="tool-control-label">Display</span>
