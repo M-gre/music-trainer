@@ -4218,3 +4218,21 @@ a.tool-card:hover {
   font-size: 0.8rem;
   text-align: center;
 }
+
+/* ---- Focusable SVG instrument hit targets (M6 a11y) ---- */
+
+/* The interactive Fretboard/Keyboard expose their positions as focusable
+   buttons with a roving tabindex. The global [tabindex]:focus-visible ring
+   above renders unreliably on SVG children, so ring these explicitly with a
+   stroke-friendly outline (matching the .cf-segment pattern). */
+.fb-hit:focus-visible,
+.kb-key:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Fallback for engines that ignore outline on SVG shapes: also paint a stroke. */
+.kb-key:focus-visible {
+  stroke: var(--accent);
+  stroke-width: 2;
+}

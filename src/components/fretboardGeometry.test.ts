@@ -5,12 +5,14 @@ import {
   DEFAULT_LAYOUT,
   defaultMarkerLabel,
   FRET_NUMBER_FONT_SIZE,
+  fretboardPositionLabel,
   inlayCenterY,
   inlayDots,
   inlayDoubleOffset,
   inlayRadius,
   markerRadius,
   mirrorX,
+  nextFretboardCursor,
   noteX,
   stringStrokeWidth,
   stringY,
@@ -238,5 +240,94 @@ describe('mirrorX (left-handed flip)', () => {
       expect(x).toBeGreaterThanOrEqual(0)
       expect(x).toBeLessThanOrEqual(layout.width)
     }
+  })
+})
+
+describe('nextFretboardCursor', () => {
+  // A 4-string board (E A D G) with the nut shown: clickable frets 0..12.
+  const frets = Array.from({ length: 13 }, (_, i) => i) // [0..12]
+
+  it('moves up and down between strings, clamped to the range', () => {
+    expect(nextFretboardCursor({ string: 0, fret: 3 }, 'ArrowUp', 4, frets)).toEqual({
+      string: 1,
+      fret: 3,
+    })
+    expect(nextFretboardCursor({ string: 3, fret: 3 }, 'ArrowUp', 4, frets)).toEqual({
+      string: 3,
+      fret: 3,
+    })
+    expect(nextFretboardCursor({ string: 2, fret: 3 }, 'ArrowDown', 4, frets)).toEqual({
+      string: 1,
+      fret: 3,
+    })
+    expect(nextFretboardCursor({ string: 0, fret: 3 }, 'ArrowDown', 4, frets)).toEqual({
+      string: 0,
+      fret: 3,
+    })
+  })
+
+  it('moves right and left through the ordered clickable frets, clamped', () => {
+    expect(nextFretboardCursor({ string: 1, fret: 3 }, 'ArrowRight', 4, frets)).toEqual({
+      string: 1,
+      fret: 4,
+    })
+    expect(nextFretboardCursor({ string: 1, fret: 3 }, 'ArrowLeft', 4, frets)).toEqual({
+      string: 1,
+      fret: 2,
+    })
+    expect(nextFretboardCursor({ string: 1, fret: 12 }, 'ArrowRight', 4, frets)).toEqual({
+      string: 1,
+      fret: 12,
+    })
+    expect(nextFretboardCursor({ string: 1, fret: 0 }, 'ArrowLeft', 4, frets)).toEqual({
+      string: 1,
+      fret: 0,
+    })
+  })
+
+  it('respects a non-contiguous fret window (e.g. frets 5..9)', () => {
+    const window = [5, 6, 7, 8, 9]
+    expect(nextFretboardCursor({ string: 0, fret: 5 }, 'ArrowLeft', 4, window)).toEqual({
+      string: 0,
+      fret: 5,
+    })
+    expect(nextFretboardCursor({ string: 0, fret: 5 }, 'Home', 4, window)).toEqual({
+      string: 0,
+      fret: 5,
+    })
+    expect(nextFretboardCursor({ string: 0, fret: 5 }, 'End', 4, window)).toEqual({
+      string: 0,
+      fret: 9,
+    })
+  })
+
+  it('returns the cursor unchanged for non-navigation keys or an empty grid', () => {
+    expect(nextFretboardCursor({ string: 1, fret: 3 }, 'Enter', 4, frets)).toEqual({
+      string: 1,
+      fret: 3,
+    })
+    expect(nextFretboardCursor({ string: 1, fret: 3 }, 'ArrowUp', 4, [])).toEqual({
+      string: 1,
+      fret: 3,
+    })
+  })
+})
+
+describe('fretboardPositionLabel', () => {
+  it('names the string, fret and sounded note', () => {
+    const eString = nameToMidi('E1') // 4-string bass low E
+    // 5th fret of the low-E string sounds an A.
+    expect(fretboardPositionLabel(eString, 5, eString + 5, 'sharp')).toBe('E string, fret 5, A')
+  })
+
+  it('says "open" for fret 0', () => {
+    const aString = nameToMidi('A1')
+    expect(fretboardPositionLabel(aString, 0, aString, 'sharp')).toBe('A string, open, A')
+  })
+
+  it('honours the flat spelling preference', () => {
+    const eString = nameToMidi('E2')
+    // 4th fret of E sounds G#/Ab.
+    expect(fretboardPositionLabel(eString, 4, eString + 4, 'flat')).toBe('E string, fret 4, Ab')
   })
 })

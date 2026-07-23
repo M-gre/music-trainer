@@ -17,6 +17,7 @@
  * when omitted every tool inherits the user's global choice with no wiring.
  */
 
+import { useRef, useState } from 'react'
 import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
 import { applySpellingPreference } from '../lib/globalSettings.ts'
 import { fretMidi, type Tuning } from '../lib/theory/instruments.ts'
@@ -25,12 +26,14 @@ import {
   defaultMarkerLabel,
   DEFAULT_LAYOUT,
   type FretboardLayoutConfig,
+  fretboardPositionLabel,
   inlayCenterY,
   inlayDots,
   inlayDoubleOffset,
   inlayRadius,
   markerRadius,
   mirrorX,
+  nextFretboardCursor,
   noteX,
   stringStrokeWidth,
   stringY,
@@ -131,12 +134,22 @@ export function Fretboard({
   const inlayR = inlayRadius(config)
   const dotR = markerRadius(config)
 
+  // Roving tabindex: the whole interactive board is one tabstop; arrow keys
+  // move a single focused cell within it. State holds the intended cell; it is
+  // clamped to the live grid each render so a tuning/range change can't strand
+  // focus on a cell that no longer exists.
+  const [cursor, setCursor] = useState({ string: 0, fret: clickableFrets[0] ?? 0 })
+  const hitRefs = useRef(new Map<string, SVGRectElement>())
+  const cellKey = (s: number, fret: number): string => `${s}-${fret}`
+  const activeString = Math.min(cursor.string, stringCount - 1)
+  const activeFret = clickableFrets.includes(cursor.fret) ? cursor.fret : (clickableFrets[0] ?? 0)
+
   return (
     <svg
       className={`fb-fretboard${className ? ` ${className}` : ''}`}
       viewBox={`0 0 ${layout.width} ${layout.height}`}
       width="100%"
-      role="img"
+      role={onFretClick ? 'group' : 'img'}
       aria-label={ariaLabel ?? `${tuning.name} fretboard`}
       preserveAspectRatio="xMidYMid meet"
     >
@@ -210,20 +223,54 @@ export function Fretboard({
           </text>
         ))}
 
-      {/* Click targets */}
+      {/* Click targets — keyboard-focusable buttons with a roving tabindex. */}
       {onFretClick &&
         stringIndexes.flatMap((s) =>
           clickableFrets.map((fret) => {
             const midi = fretMidi(tuning, s, fret)
+            const isTabStop = s === activeString && fret === activeFret
             return (
               <rect
                 key={`hit-${s}-${fret}`}
+                ref={(el) => {
+                  const map = hitRefs.current
+                  if (el) map.set(cellKey(s, fret), el)
+                  else map.delete(cellKey(s, fret))
+                }}
                 className="fb-hit"
                 x={mx(noteX(layout, fret)) - config.fretWidth / 2}
                 y={stringY(layout, s) - config.stringSpacing / 2}
                 width={config.fretWidth}
                 height={config.stringSpacing}
+                role="button"
+                tabIndex={isTabStop ? 0 : -1}
+                aria-label={fretboardPositionLabel(
+                  tuning.strings[s] ?? midi,
+                  fret,
+                  midi,
+                  resolvedPrefer,
+                )}
                 onClick={() => onFretClick({ string: s, fret, midi })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onFretClick({ string: s, fret, midi })
+                    return
+                  }
+                  // Mirror the left/right keys for a flipped (left-handed) neck
+                  // so arrow direction always matches what the player sees.
+                  let navKey = e.key
+                  if (resolvedLeftHanded) {
+                    if (navKey === 'ArrowLeft') navKey = 'ArrowRight'
+                    else if (navKey === 'ArrowRight') navKey = 'ArrowLeft'
+                  }
+                  const next = nextFretboardCursor({ string: s, fret }, navKey, stringCount, clickableFrets)
+                  if (next.string !== s || next.fret !== fret) {
+                    e.preventDefault()
+                    setCursor(next)
+                    hitRefs.current.get(cellKey(next.string, next.fret))?.focus()
+                  }
+                }}
               />
             )
           }),

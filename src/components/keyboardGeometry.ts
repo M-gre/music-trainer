@@ -10,7 +10,53 @@
  * E–F or B–C boundary, which falls out naturally from the pitch classes.
  */
 
-import { midiToPc, midiToOctave, pcToName } from '../lib/theory/notes.ts'
+import { midiToName, midiToPc, midiToOctave, pcToName } from '../lib/theory/notes.ts'
+
+/**
+ * Move a roving-tabindex cursor one step across the keyboard in response to an
+ * arrow / Home / End key, clamped to the range (no wrapping). Left/Right step
+ * by a single key (semitone) through the ordered `orderedMidis`; Up/Down jump
+ * an octave when that key exists in range, otherwise clamp to the far end.
+ * Any other key returns `current` unchanged so the caller can tell nothing
+ * moved. `orderedMidis` must be ascending and contain every drawn key.
+ */
+export function nextKeyboardMidi(
+  current: number,
+  key: string,
+  orderedMidis: readonly number[],
+): number {
+  if (orderedMidis.length === 0) return current
+  const first = orderedMidis[0]!
+  const last = orderedMidis[orderedMidis.length - 1]!
+  const rawIdx = orderedMidis.indexOf(current)
+  const idx = rawIdx < 0 ? 0 : rawIdx
+  const at = (i: number): number =>
+    orderedMidis[Math.max(0, Math.min(orderedMidis.length - 1, i))]!
+  switch (key) {
+    case 'ArrowRight':
+      return at(idx + 1)
+    case 'ArrowLeft':
+      return at(idx - 1)
+    case 'ArrowUp':
+      return orderedMidis.includes(current + 12) ? current + 12 : last
+    case 'ArrowDown':
+      return orderedMidis.includes(current - 12) ? current - 12 : first
+    case 'Home':
+      return first
+    case 'End':
+      return last
+    default:
+      return current
+  }
+}
+
+/**
+ * Accessible label for a single key, e.g. `"C#4"` / `"Eb3"` — pitch-class name
+ * with its octave, matching the note-naming used elsewhere in the app.
+ */
+export function keyboardKeyLabel(midi: number, prefer: 'sharp' | 'flat' = 'sharp'): string {
+  return midiToName(midi, prefer)
+}
 
 /** Pitch classes drawn as white keys (C D E F G A B). */
 export const WHITE_PITCH_CLASSES: readonly number[] = [0, 2, 4, 5, 7, 9, 11]
