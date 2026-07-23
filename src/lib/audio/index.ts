@@ -1,5 +1,6 @@
 export * from './envelope.ts'
 export * from './engine.ts'
+export * from './drums.ts'
 export * from './clickVoices.ts'
 export * from './scheduler.ts'
 export * from './tapTempo.ts'
