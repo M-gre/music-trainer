@@ -1,7 +1,8 @@
 /**
- * Ear Training — by-ear quiz tools, now two sibling modes selected by a
- * top-level segmented control: interval recognition and chord-quality
- * recognition. Both are thin React shells over pure cores:
+ * Ear Training — by-ear quiz tools, now three sibling modes selected by a
+ * top-level segmented control: interval recognition, chord-quality
+ * recognition, and scale/mode recognition. All three are thin React shells
+ * over pure cores:
  *  - `src/lib/quiz.ts`: `QuizSession` (score/streak), reused by every quiz.
  *  - `src/lib/earTraining.ts`: interval question generation, answer checking,
  *    playback scheduling, per-interval stats, and the persisted
@@ -10,14 +11,18 @@
  *    question generation (root/quality/inversion), answer checking, the
  *    voicing/arpeggio to play (via `chordExplorer.ts`), per-quality stats,
  *    and its own persisted settings/stats stores.
+ *  - `src/lib/scaleRecognitionTraining.ts`: the scale/mode equivalent —
+ *    question generation (root register + scale), answer checking, the
+ *    ascending/descending note sequence to play, per-scale stats, and its own
+ *    persisted settings/stats stores.
  *
- * Structured for the rest of milestone M3: a future scale/mode recognition
- * quiz is meant to slot in as another SIBLING MODE here — add it to the
- * segmented control below and render another trainer component. Each mode
- * owns its own settings/stats stores so switching tabs never clobbers the
- * other mode's progress. Both trainers reuse the same `QuizSession` wiring,
- * the `et-*` styles, the play/replay transport, the multiple-choice grid, and
- * the stats-chip pattern. Audio only ever starts from a user gesture
+ * Structured for the rest of milestone M3: further quizzes are meant to slot
+ * in as additional SIBLING MODES here — add them to the segmented control
+ * below and render another trainer component. Each mode owns its own
+ * settings/stats stores so switching tabs never clobbers another mode's
+ * progress. All trainers reuse the same `QuizSession` wiring, the `et-*`
+ * styles, the play/replay transport, the multiple-choice grid, and the
+ * stats-chip pattern. Audio only ever starts from a user gesture
  * (`ensureRunning`), never at mount — matching the other tool pages.
  */
 
@@ -69,6 +74,29 @@ import {
   type ChordQualityTrainingSettings,
 } from '../lib/chordQualityTraining.ts'
 import { getChordQuality } from '../lib/theory/chords.ts'
+import {
+  accumulateStat as accumulateScaleStat,
+  accuracy as scaleAccuracy,
+  ALL_SCALE_IDS,
+  checkScaleAnswer,
+  DEFAULT_SCALE_STEP_SECONDS,
+  generateScaleQuestion,
+  normalizeScaleStats,
+  normalizeScaleTrainingSettings,
+  questionScaleSteps,
+  scaleLabel,
+  scaleSettingsStore,
+  scaleShort,
+  scaleStatsStore,
+  SCALE_PRESETS,
+  sortScaleIds,
+  toggleScale,
+  type ScaleQuestion,
+  type ScaleQuestionContext,
+  type ScaleStats,
+  type ScaleTrainingSettings,
+} from '../lib/scaleRecognitionTraining.ts'
+import { getScale } from '../lib/theory/scales.ts'
 
 /** Per-note playback durations (seconds); harmonic rings a little longer. */
 const MELODIC_NOTE_DURATION = 0.7
@@ -83,11 +111,12 @@ const PLAYBACK_OPTIONS: { value: PlaybackSetting; label: string }[] = [
   { value: 'random', label: PLAYBACK_LABELS.random },
 ]
 
-type EarTrainingMode = 'intervals' | 'chord-quality'
+type EarTrainingMode = 'intervals' | 'chord-quality' | 'scales'
 
 const MODE_OPTIONS: { value: EarTrainingMode; label: string }[] = [
   { value: 'intervals', label: 'Intervals' },
   { value: 'chord-quality', label: 'Chord qualities' },
+  { value: 'scales', label: 'Scales' },
 ]
 
 export function EarTraining() {
@@ -101,8 +130,8 @@ export function EarTraining() {
       <div className="tool-page-header">
         <h1>Ear Training</h1>
         <p className="tool-page-lead">
-          Train your ear to name intervals and chord qualities. Sound plays only after you press
-          Play.
+          Train your ear to name intervals, chord qualities, and scales/modes. Sound plays only
+          after you press Play.
         </p>
       </div>
 
@@ -121,7 +150,9 @@ export function EarTraining() {
         ))}
       </div>
 
-      {mode === 'intervals' ? <IntervalTrainer /> : <ChordQualityTrainer />}
+      {mode === 'intervals' && <IntervalTrainer />}
+      {mode === 'chord-quality' && <ChordQualityTrainer />}
+      {mode === 'scales' && <ScaleTrainer />}
     </div>
   )
 }
@@ -783,6 +814,372 @@ function ChordQualityStatsPanel({ enabled, session, lifetime, onReset }: ChordQu
           return (
             <div key={id} className="et-stat" title={quality.name}>
               <span className="et-stat-name">{qualityShort(quality)}</span>
+              <span className="et-stat-line">
+                <span className="et-stat-tag">Session</span>
+                {formatStat(sessionAcc, s?.attempts ?? 0)}
+              </span>
+              <span className="et-stat-line">
+                <span className="et-stat-tag">Lifetime</span>
+                {formatStat(lifetimeAcc, l?.attempts ?? 0)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// --- Scale/mode recognition (sibling mode) ----------------------------------
+
+/** Per-note duration when playing the scale (seconds); a touch longer than the
+ * step spacing so consecutive notes overlap slightly for a legato feel. */
+const SCALE_NOTE_DURATION = 0.35
+/** How long a correct answer stays up before auto-advancing (ms). */
+const ADVANCE_MS_CORRECT_SCALE = 1000
+
+function ScaleTrainer() {
+  const engineRef = useRef(getAudioEngine())
+  const advanceTimeoutRef = useRef<number | null>(null)
+
+  const [settings, setSettings] = useState<ScaleTrainingSettings>(() =>
+    normalizeScaleTrainingSettings(scaleSettingsStore.get()),
+  )
+  useEffect(() => {
+    scaleSettingsStore.set(settings)
+  }, [settings])
+
+  // Live context read by the (stable) question generator.
+  const context: ScaleQuestionContext = { enabled: settings.enabled }
+  const contextRef = useRef(context)
+  contextRef.current = context
+
+  const sessionRef = useRef<QuizSession<ScaleQuestion, string> | null>(null)
+  const [question, setQuestion] = useState<ScaleQuestion | null>(null)
+  const [stats, setStats] = useState<QuizStats>(emptyStats)
+  const [answer, setAnswer] = useState<string | null>(null)
+  /** True once the user has made the first audio gesture (enables auto-play). */
+  const [started, setStarted] = useState(false)
+  const startedRef = useRef(false)
+
+  const [sessionStats, setSessionStats] = useState<ScaleStats>({})
+  const [lifetimeStats, setLifetimeStats] = useState<ScaleStats>(() =>
+    normalizeScaleStats(scaleStatsStore.get()),
+  )
+
+  const clearAdvance = useCallback(() => {
+    if (advanceTimeoutRef.current !== null) {
+      window.clearTimeout(advanceTimeoutRef.current)
+      advanceTimeoutRef.current = null
+    }
+  }, [])
+
+  /** Play a question's scale ascending (root through the octave above). */
+  const playAscending = useCallback((q: ScaleQuestion) => {
+    const engine = engineRef.current
+    void engine.ensureRunning().then(() => {
+      const now = engine.currentTime
+      for (const step of questionScaleSteps(q, DEFAULT_SCALE_STEP_SECONDS, now, false)) {
+        engine.playNote(step.midi, SCALE_NOTE_DURATION, { when: step.when })
+      }
+    })
+  }, [])
+
+  /** Replay a question's scale descending — the harder "hear it backwards" option. */
+  const playDescending = useCallback((q: ScaleQuestion) => {
+    const engine = engineRef.current
+    void engine.ensureRunning().then(() => {
+      const now = engine.currentTime
+      for (const step of questionScaleSteps(q, DEFAULT_SCALE_STEP_SECONDS, now, true)) {
+        engine.playNote(step.midi, SCALE_NOTE_DURATION, { when: step.when })
+      }
+    })
+  }, [])
+
+  const markStarted = useCallback(() => {
+    if (!startedRef.current) {
+      startedRef.current = true
+      setStarted(true)
+    }
+  }, [])
+
+  const playCurrent = useCallback(() => {
+    const q = sessionRef.current?.current
+    if (!q) return
+    markStarted()
+    playAscending(q)
+  }, [markStarted, playAscending])
+
+  const playCurrentDescending = useCallback(() => {
+    const q = sessionRef.current?.current
+    if (!q) return
+    markStarted()
+    playDescending(q)
+  }, [markStarted, playDescending])
+
+  // (Re)start a session whenever the enabled scale set changes. Auto-plays
+  // the fresh question only if already started.
+  const contextKey = settings.enabled.join(',')
+  useEffect(() => {
+    clearAdvance()
+    const session = new QuizSession<ScaleQuestion, string>({
+      generate: (previous, rng) => generateScaleQuestion(contextRef.current, previous, rng),
+      check: checkScaleAnswer,
+    })
+    sessionRef.current = session
+    session.next()
+    setQuestion(session.current)
+    setStats(session.stats)
+    setAnswer(null)
+    if (startedRef.current && session.current) playAscending(session.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextKey])
+
+  useEffect(() => () => clearAdvance(), [clearAdvance])
+
+  const advance = useCallback(() => {
+    clearAdvance()
+    const session = sessionRef.current
+    if (!session) return
+    session.next()
+    setQuestion(session.current)
+    setAnswer(null)
+    if (startedRef.current && session.current) playAscending(session.current)
+  }, [clearAdvance, playAscending])
+
+  const submit = useCallback(
+    (picked: string) => {
+      const session = sessionRef.current
+      const q = session?.current
+      if (!session || !q || session.isAnswered) return
+      const res = session.answer(picked)
+      setAnswer(picked)
+      setStats(session.stats)
+
+      setSessionStats((s) => accumulateScaleStat(s, q.scaleId, res.correct))
+      setLifetimeStats((s) => {
+        const next = accumulateScaleStat(s, q.scaleId, res.correct)
+        scaleStatsStore.set(next)
+        return next
+      })
+
+      if (res.correct) {
+        clearAdvance()
+        advanceTimeoutRef.current = window.setTimeout(advance, ADVANCE_MS_CORRECT_SCALE)
+      }
+    },
+    [advance, clearAdvance],
+  )
+
+  const resetStats = useCallback(() => {
+    setSessionStats({})
+    setLifetimeStats({})
+    scaleStatsStore.set({})
+  }, [])
+
+  const answered = answer !== null
+  const correct = answered && question !== null && answer === question.scaleId
+
+  const enabledSorted = useMemo(() => sortScaleIds(settings.enabled), [settings.enabled])
+
+  const applyPreset = (scaleIds: string[]): void => setSettings((s) => ({ ...s, enabled: [...scaleIds] }))
+
+  const toggle = (scaleId: string): void =>
+    setSettings((s) => ({ ...s, enabled: toggleScale(s.enabled, scaleId) }))
+
+  return (
+    <>
+      <div className="tool-controls">
+        <div className="tool-control-group">
+          <span className="tool-control-label">Scale set</span>
+          <div className="mn-segmented" role="group" aria-label="Scale presets">
+            {SCALE_PRESETS.map((preset) => {
+              const active =
+                preset.scaleIds.length === settings.enabled.length &&
+                preset.scaleIds.every((id) => settings.enabled.includes(id))
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`mn-segment${active ? ' mn-segment-active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => applyPreset(preset.scaleIds)}
+                >
+                  {preset.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="et-chips" role="group" aria-label="Enabled scales">
+            {ALL_SCALE_IDS.map((id) => {
+              const scale = getScale(id)
+              const on = settings.enabled.includes(id)
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`et-chip${on ? ' et-chip-on' : ''}`}
+                  aria-pressed={on}
+                  title={scale.name}
+                  onClick={() => toggle(id)}
+                >
+                  {scaleShort(scale)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="fnt-prompt" role="status" aria-live="polite">
+        <ScalePrompt question={question} answer={answer} started={started} />
+      </div>
+
+      <div className="et-transport">
+        <button type="button" className="et-play" onClick={playCurrent}>
+          {started ? '▶ Play again' : '▶ Play scale'}
+        </button>
+        <button type="button" className="et-play-secondary" onClick={playCurrentDescending}>
+          Play descending
+        </button>
+      </div>
+
+      <div className="et-answers" role="group" aria-label="Scale answers">
+        {enabledSorted.map((id) => {
+          const scale = getScale(id)
+          const isCorrect = answered && question?.scaleId === id
+          const isWrongChoice = answered && !correct && answer === id
+          const cls = ['et-answer']
+          if (isCorrect) cls.push('et-answer-correct')
+          if (isWrongChoice) cls.push('et-answer-wrong')
+          return (
+            <button
+              key={id}
+              type="button"
+              className={cls.join(' ')}
+              disabled={answered}
+              onClick={() => submit(id)}
+            >
+              <span className="et-answer-short">{scaleShort(scale)}</span>
+              <span className="et-answer-full">{scaleLabel(scale)}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {answered && !correct && question && (
+        <div className="et-compare" role="group" aria-label="Replay to compare">
+          <p className="fnt-hint">Replay both, then continue.</p>
+          <div className="et-compare-row">
+            <button
+              type="button"
+              className="et-compare-btn"
+              onClick={() => playAscending({ ...question, scaleId: answer })}
+            >
+              Your answer ({scaleShort(getScale(answer))})
+            </button>
+            <button type="button" className="et-compare-btn" onClick={() => playAscending(question)}>
+              Correct ({scaleShort(getScale(question.scaleId))})
+            </button>
+          </div>
+          <button type="button" className="et-next" onClick={advance}>
+            Next question →
+          </button>
+        </div>
+      )}
+
+      <div className="fnt-score">
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">{stats.streak}</span>
+          <span className="fnt-score-label">Streak</span>
+        </div>
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">
+            {stats.correct}
+            <span className="fnt-score-sep">/</span>
+            {stats.answered}
+          </span>
+          <span className="fnt-score-label">Correct</span>
+        </div>
+        <div className="fnt-score-item">
+          <span className="fnt-score-value">{stats.bestStreak}</span>
+          <span className="fnt-score-label">Best streak</span>
+        </div>
+      </div>
+
+      <ScaleStatsPanel
+        enabled={enabledSorted}
+        session={sessionStats}
+        lifetime={lifetimeStats}
+        onReset={resetStats}
+      />
+    </>
+  )
+}
+
+interface ScalePromptProps {
+  question: ScaleQuestion | null
+  answer: string | null
+  started: boolean
+}
+
+function ScalePrompt({ question, answer, started }: ScalePromptProps) {
+  if (!question) return <span className="fnt-prompt-text">Loading…</span>
+
+  if (answer !== null) {
+    const correct = answer === question.scaleId
+    const scale = getScale(question.scaleId)
+    if (correct) {
+      return (
+        <span className="fnt-prompt-feedback fnt-correct">
+          Correct — {scaleShort(scale)} ({scale.name})!
+        </span>
+      )
+    }
+    return (
+      <span className="fnt-prompt-feedback fnt-wrong">
+        Not quite — that was {scaleShort(scale)} ({scale.name}).
+      </span>
+    )
+  }
+
+  if (!started) {
+    return <span className="fnt-prompt-text">Press Play to hear the scale, then name it.</span>
+  }
+  return (
+    <span className="fnt-prompt-text">
+      What <strong className="fnt-target">scale or mode</strong> did you hear?
+    </span>
+  )
+}
+
+interface ScaleStatsPanelProps {
+  enabled: string[]
+  session: ScaleStats
+  lifetime: ScaleStats
+  onReset: () => void
+}
+
+/** Compact accuracy chips per enabled scale: session and lifetime tallies. */
+function ScaleStatsPanel({ enabled, session, lifetime, onReset }: ScaleStatsPanelProps) {
+  return (
+    <div className="et-stats">
+      <div className="et-stats-head">
+        <span className="tool-control-label">Per-scale accuracy</span>
+        <button type="button" className="et-reset" onClick={onReset}>
+          Reset stats
+        </button>
+      </div>
+      <div className="et-stats-grid">
+        {enabled.map((id) => {
+          const scale = getScale(id)
+          const s = session[id]
+          const l = lifetime[id]
+          const sessionAcc = scaleAccuracy(s)
+          const lifetimeAcc = scaleAccuracy(l)
+          return (
+            <div key={id} className="et-stat" title={scale.name}>
+              <span className="et-stat-name">{scaleShort(scale)}</span>
               <span className="et-stat-line">
                 <span className="et-stat-tag">Session</span>
                 {formatStat(sessionAcc, s?.attempts ?? 0)}
