@@ -4218,3 +4218,241 @@ a.tool-card:hover {
   font-size: 0.8rem;
   text-align: center;
 }
+
+/* --- Dexterity: warm-up routine builder + player ------------------------- */
+
+.dx-routine {
+  margin-top: 0.75rem;
+}
+
+.dx-routine-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0 0.85rem;
+}
+
+.dx-routine-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.dx-routine-add {
+  min-height: 44px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.dx-routine-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.dx-routine-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.dx-routine-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dx-routine-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.dx-routine-step-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.dx-routine-step-order {
+  min-width: 1.4rem;
+  height: 1.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.dx-routine-step-label {
+  flex: 1 1 8rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dx-routine-step-dur {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dx-routine-step-dur .dx-segmented {
+  flex-wrap: nowrap;
+}
+
+.dx-routine-step-dur .dx-segment {
+  flex: 0 0 auto;
+  min-width: 3rem;
+}
+
+.dx-routine-dur-input {
+  width: 3.5rem;
+  min-height: 44px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.9rem;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+}
+
+.dx-routine-step-btns {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.dx-routine-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.dx-routine-btn:hover {
+  border-color: var(--accent-dim);
+}
+
+.dx-routine-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dx-routine-btn-remove {
+  color: #d0685f;
+}
+
+.dx-routine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dx-routine-actions .dx-start {
+  flex: 0 0 auto;
+  min-width: 8rem;
+  min-height: 44px;
+  font-size: 0.95rem;
+}
+
+.dx-routine-name {
+  flex: 1 1 8rem;
+  min-height: 44px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+}
+
+.dx-routine-save {
+  font-weight: 700;
+}
+
+.dx-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dx-saved-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dx-saved-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.dx-saved-name {
+  flex: 1 1 6rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dx-saved-meta {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.dx-routine-progress {
+  align-self: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.dx-routine-banner {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--bg);
+  background: var(--accent);
+  border-radius: 8px;
+}
