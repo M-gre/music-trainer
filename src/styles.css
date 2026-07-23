@@ -3325,3 +3325,20 @@ a.tool-card:hover {
   background: #b8433a;
   border-color: #b8433a;
 }
+
+.dx-scale-group {
+  gap: 0.75rem;
+}
+
+.dx-scale-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.dx-scale-field {
+  display: flex;
+  flex: 1 1 8rem;
+  flex-direction: column;
+  gap: 0.35rem;
+}

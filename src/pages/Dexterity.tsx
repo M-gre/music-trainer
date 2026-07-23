@@ -28,6 +28,7 @@ import {
 import {
   clampBpm,
   clampFret,
+  DEXTERITY_MODES,
   dexteritySettingsStore,
   MAX_BPM,
   MAX_FRET,
@@ -35,6 +36,7 @@ import {
   MIN_FRET,
   NOTES_PER_BEAT_OPTIONS,
   normalizeDexteritySettings,
+  type DexterityMode,
 } from '../lib/dexteritySettings.ts'
 import {
   applyDirection,
@@ -48,7 +50,14 @@ import {
   type Direction,
   type ExerciseStep,
 } from '../lib/exercises.ts'
-import { midiToName } from '../lib/theory/notes.ts'
+import { midiToName, pcToName, type PitchClass } from '../lib/theory/notes.ts'
+import { getScale, SCALES } from '../lib/theory/scales.ts'
+import {
+  expandScaleSequence,
+  getSequencePattern,
+  SEQUENCE_PATTERNS,
+  type SequencePatternId,
+} from '../lib/scaleSequences.ts'
 import {
   ALL_PERMUTATION_PATTERNS,
   dailyPermutationSet,
@@ -70,6 +79,14 @@ const DIRECTION_LABELS: Record<Direction, string> = {
   'forward-reverse': 'Forward + Reverse',
 }
 
+const MODE_LABELS: Record<DexterityMode, string> = {
+  pattern: 'Patterns',
+  scale: 'Scale sequences',
+}
+
+/** The twelve pitch classes as root options for the scale-sequence picker. */
+const ROOT_PCS: readonly PitchClass[] = Array.from({ length: 12 }, (_, i) => i)
+
 /** Fraction of a grid step a note sounds for, leaving a small gap between notes. */
 const NOTE_LENGTH = 0.9
 
@@ -82,7 +99,11 @@ export function Dexterity() {
   const tuning = instrument.tuning
 
   const [settings] = useState(() => normalizeDexteritySettings(dexteritySettingsStore.get()))
+  const [mode, setMode] = useState<DexterityMode>(settings.mode)
   const [patternId, setPatternId] = useState(settings.patternId)
+  const [scaleRootPc, setScaleRootPc] = useState<PitchClass>(settings.scaleRootPc)
+  const [scaleId, setScaleId] = useState(settings.scaleId)
+  const [sequenceId, setSequenceId] = useState<SequencePatternId>(settings.sequenceId)
   const [position, setPosition] = useState(settings.position)
   const [bpm, setBpm] = useState(settings.bpm)
   const [notesPerBeat, setNotesPerBeat] = useState(settings.notesPerBeat)
@@ -98,6 +119,8 @@ export function Dexterity() {
 
   const pattern = useMemo(() => getPermutationPattern(patternId) ?? getPattern(patternId), [patternId])
   const patternGroups = useMemo(() => patternsByCategory(), [])
+  const scale = useMemo(() => getScale(scaleId), [scaleId])
+  const sequence = useMemo(() => getSequencePattern(sequenceId), [sequenceId])
 
   // "Today" is read from the wall clock once, here at the page level, and
   // handed to the pure daily-set generator as a plain date string — the
@@ -116,9 +139,12 @@ export function Dexterity() {
   const displayPosition = running ? positionForLoop(activeLoop, position, range) : position
 
   const displaySteps = useMemo(() => {
-    const raw = expandPattern(pattern, { tuning, position: displayPosition })
+    const raw =
+      mode === 'scale'
+        ? expandScaleSequence({ tuning, root: scaleRootPc, scale, patternId: sequenceId, anchor: displayPosition })
+        : expandPattern(pattern, { tuning, position: displayPosition })
     return applyDirection(raw, direction)
-  }, [pattern, tuning, displayPosition, direction])
+  }, [mode, pattern, tuning, scaleRootPc, scale, sequenceId, displayPosition, direction])
 
   // Step count + durations are independent of the position, so this timing is
   // valid for every loop; the rAF indicator and the audio callback share it.
@@ -136,6 +162,10 @@ export function Dexterity() {
   const bpmRef = useRef(bpm)
   const clickRef = useRef(clickOn)
   const directionRef = useRef(direction)
+  const modeRef = useRef(mode)
+  const scaleRootPcRef = useRef(scaleRootPc)
+  const scaleRef = useRef(scale)
+  const sequenceIdRef = useRef(sequenceId)
   patternRef.current = pattern
   tuningRef.current = tuning
   positionRef.current = position
@@ -144,11 +174,19 @@ export function Dexterity() {
   bpmRef.current = bpm
   clickRef.current = clickOn
   directionRef.current = direction
+  modeRef.current = mode
+  scaleRootPcRef.current = scaleRootPc
+  scaleRef.current = scale
+  sequenceIdRef.current = sequenceId
 
   // Persist preferences whenever they change.
   useEffect(() => {
     dexteritySettingsStore.set({
+      mode,
       patternId,
+      scaleRootPc,
+      scaleId,
+      sequenceId,
       position,
       bpm,
       notesPerBeat,
@@ -157,7 +195,20 @@ export function Dexterity() {
       advanceMax,
       direction,
     })
-  }, [patternId, position, bpm, notesPerBeat, autoAdvance, advanceMin, advanceMax, direction])
+  }, [
+    mode,
+    patternId,
+    scaleRootPc,
+    scaleId,
+    sequenceId,
+    position,
+    bpm,
+    notesPerBeat,
+    autoAdvance,
+    advanceMin,
+    advanceMax,
+    direction,
+  ])
 
   // Apply tempo / subdivision changes to a live scheduler without stopping it.
   useEffect(() => {
@@ -172,26 +223,33 @@ export function Dexterity() {
   // stable across the scheduler's lifetime.
   const handleEvent = useCallback((event: SchedulerEvent, when: number) => {
     const engine = engineRef.current
-    const currentPattern = patternRef.current
     const currentTuning = tuningRef.current
 
-    const stepList = applyDirection(
-      expandPattern(currentPattern, {
-        tuning: currentTuning,
-        position: positionRef.current,
-      }),
-      directionRef.current,
-    )
+    // Build the current step sequence for a given anchor/position, dispatching
+    // on the active mode — a built-in pattern or a scale-sequence drill. Reads
+    // everything from refs so the callback identity stays stable.
+    const buildSteps = (pos: number): ExerciseStep[] => {
+      const raw =
+        modeRef.current === 'scale'
+          ? expandScaleSequence({
+              tuning: currentTuning,
+              root: scaleRootPcRef.current,
+              scale: scaleRef.current,
+              patternId: sequenceIdRef.current,
+              anchor: pos,
+            })
+          : expandPattern(patternRef.current, { tuning: currentTuning, position: pos })
+      return applyDirection(raw, directionRef.current)
+    }
+
+    const stepList = buildSteps(positionRef.current)
     const loopTiming = stepTimings(stepList)
     const loc = locateStep(event.step, loopTiming)
     if (!loc) return
 
     if (loc.isOnset) {
       const loopPosition = positionForLoop(loc.loop, positionRef.current, rangeRef.current)
-      const notes = applyDirection(
-        expandPattern(currentPattern, { tuning: currentTuning, position: loopPosition }),
-        directionRef.current,
-      )
+      const notes = buildSteps(loopPosition)
       const step = notes[loc.stepIndex]
       if (step) {
         const stepSeconds = secondsPerSubdivision(bpmRef.current, notesPerBeatRef.current)
@@ -277,6 +335,9 @@ export function Dexterity() {
 
   const markers = buildMarkers(displaySteps, running, activeStepIndex)
 
+  const rootName = pcToName(scaleRootPc)
+  const title = mode === 'scale' ? `${rootName} ${scale.name} — ${sequence.name}` : pattern.name
+
   return (
     <div className="tool-page">
       <div className="tool-page-header">
@@ -288,9 +349,28 @@ export function Dexterity() {
       </div>
 
       <div className="tool-controls">
-        <div className="tool-control-group dx-pattern-group">
-          <span className="tool-control-label">Pattern</span>
-          <div className="dx-patterns" role="radiogroup" aria-label="Exercise pattern">
+        <div className="tool-control-group">
+          <span className="tool-control-label">Drill type</span>
+          <div className="dx-segmented" role="group" aria-label="Drill type">
+            {DEXTERITY_MODES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`dx-segment${m === mode ? ' dx-segment-active' : ''}`}
+                aria-pressed={m === mode}
+                onClick={() => setMode(m)}
+              >
+                {MODE_LABELS[m]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {mode === 'pattern' && (
+          <>
+            <div className="tool-control-group dx-pattern-group">
+              <span className="tool-control-label">Pattern</span>
+              <div className="dx-patterns" role="radiogroup" aria-label="Exercise pattern">
             {patternGroups.map(
               (group) =>
                 group.patterns.length > 0 && (
@@ -358,6 +438,63 @@ export function Dexterity() {
             </select>
           </label>
         </div>
+          </>
+        )}
+
+        {mode === 'scale' && (
+          <div className="tool-control-group dx-scale-group">
+            <span className="tool-control-label">Scale sequence</span>
+            <div className="dx-scale-fields">
+              <label className="dx-scale-field">
+                <span className="tool-control-label">Root</span>
+                <select
+                  className="dx-select"
+                  value={scaleRootPc}
+                  aria-label="Scale root"
+                  onChange={(e) => setScaleRootPc(Number(e.target.value) as PitchClass)}
+                >
+                  {ROOT_PCS.map((pc) => (
+                    <option key={pc} value={pc}>
+                      {pcToName(pc)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="dx-scale-field">
+                <span className="tool-control-label">Scale</span>
+                <select
+                  className="dx-select"
+                  value={scaleId}
+                  aria-label="Scale type"
+                  onChange={(e) => setScaleId(e.target.value)}
+                >
+                  {SCALES.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="dx-patterns" role="radiogroup" aria-label="Sequence pattern">
+              <div className="dx-pattern-category">
+                {SEQUENCE_PATTERNS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={p.id === sequenceId}
+                    className={`dx-pattern${p.id === sequenceId ? ' dx-pattern-active' : ''}`}
+                    onClick={() => setSequenceId(p.id)}
+                  >
+                    <span className="dx-pattern-name">{p.name}</span>
+                    <span className="dx-pattern-desc">{p.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="tool-control-group">
           <span className="tool-control-label">Instrument</span>
@@ -514,7 +651,7 @@ export function Dexterity() {
           fromFret={fromFret}
           toFret={toFret}
           markers={markers}
-          ariaLabel={`${pattern.name} on ${tuning.name}`}
+          ariaLabel={`${title} on ${tuning.name}`}
         />
       </div>
 
