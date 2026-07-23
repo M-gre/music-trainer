@@ -76,6 +76,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [ ] Keyboard shortcuts for quiz answering; accessibility pass (focus, ARIA, contrast)
 - [ ] Mobile/touch audit: 44px minimum tap targets on fretboard/keyboard hit areas, remove hover-only affordances, touch-action on controls, verify each tool at 390px width
 - [ ] Visual overlap audit: screenshot every tool (desktop + 390px) and fix overlapping/colliding elements — known offenders: fretboard marker dots covering fret numbers and inlay dots, keyboard octave labels (C3/C4…) hidden behind marker dots on white keys; establish spacing rules (labels never under markers, numbers in reserved gutters) in the shared components so all tools inherit the fix
-- [ ] Settings page: default instrument/tuning (bass & guitar, all string counts), left-handed fretboard flip, sharps/flats preference, volume
+- [x] Settings page: default instrument/tuning (bass & guitar, all string counts), left-handed fretboard flip, sharps/flats preference, volume
+- [ ] Apply sharps/flats preference in remaining tools (currently only default Fretboard/Keyboard note-name labels honor it; tools that pass explicit spelled labels — scales, chords, note reading, etc. — still ignore the global preference)
 - [ ] Custom tuning editor: define and save arbitrary tunings (name + per-string pitch) alongside the built-ins
 - [ ] Sound audit: replace the plain dual-oscillator synth with more natural instrument voices — evaluate Karplus-Strong string synthesis for bass/guitar pluck, FM or additive synthesis for a piano-like tone, per-tool voice selection (which tool uses which voice), and consistent levels across voices; self-hosted tiny samples only as a last resort (must stay offline/CSP-clean, no CDN or runtime fetching)

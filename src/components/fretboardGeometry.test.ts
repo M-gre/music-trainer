@@ -5,6 +5,7 @@ import {
   DEFAULT_LAYOUT,
   defaultMarkerLabel,
   inlayDots,
+  mirrorX,
   noteX,
   stringStrokeWidth,
   stringY,
@@ -130,5 +131,37 @@ describe('coordinate helpers', () => {
     expect(stringY(layout, 0)).toBeGreaterThan(stringY(layout, 3))
     expect(stringY(layout, 3)).toBe(layout.boardTop)
     expect(stringY(layout, 0)).toBe(layout.boardBottom)
+  })
+})
+
+describe('mirrorX (left-handed flip)', () => {
+  const layout = computeLayout(0, 12, 4, true)
+
+  it('reflects an x coordinate about the board width', () => {
+    expect(mirrorX(layout, 0)).toBe(layout.width)
+    expect(mirrorX(layout, layout.width)).toBe(0)
+    expect(mirrorX(layout, layout.width / 2)).toBe(layout.width / 2)
+  })
+
+  it('is its own inverse (mirroring twice is the identity)', () => {
+    for (const x of [0, 12, 40, 100, layout.boardRight]) {
+      expect(mirrorX(layout, mirrorX(layout, x))).toBe(x)
+    }
+  })
+
+  it('flips fret order: the nut ends up to the right of high frets', () => {
+    // Right-handed: fret 1 sits left of fret 12. Mirrored, that order reverses.
+    expect(noteX(layout, 1)).toBeLessThan(noteX(layout, 12))
+    expect(mirrorX(layout, noteX(layout, 1))).toBeGreaterThan(
+      mirrorX(layout, noteX(layout, 12)),
+    )
+  })
+
+  it('keeps mirrored fretted-note centres on-canvas', () => {
+    for (let fret = 1; fret <= 12; fret += 1) {
+      const x = mirrorX(layout, noteX(layout, fret))
+      expect(x).toBeGreaterThanOrEqual(0)
+      expect(x).toBeLessThanOrEqual(layout.width)
+    }
   })
 })

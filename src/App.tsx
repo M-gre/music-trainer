@@ -14,6 +14,7 @@ import { EarTraining } from './pages/EarTraining.tsx'
 import { Dexterity } from './pages/Dexterity.tsx'
 import { PlayAlong } from './pages/PlayAlong.tsx'
 import { PracticeDashboard } from './pages/PracticeDashboard.tsx'
+import { SettingsPage } from './pages/SettingsPage.tsx'
 
 export interface Tool {
   route: string
@@ -120,6 +121,13 @@ export const TOOLS: Tool[] = [
     description: 'Accents, subdivisions, and tempo trainer.',
     tags: ['rhythm'],
     page: () => <Metronome />,
+  },
+  {
+    route: '/settings',
+    title: 'Settings',
+    description: 'Default instrument, left-handed fretboard, note spelling, and volume.',
+    tags: ['settings'],
+    page: () => <SettingsPage />,
   },
 ]
 

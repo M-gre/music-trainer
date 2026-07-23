@@ -179,3 +179,14 @@ export function noteX(layout: FretboardLayout, fret: number): number {
 export function stringY(layout: FretboardLayout, stringIndex: number): number {
   return layout.boardTop + (layout.stringCount - 1 - stringIndex) * layout.config.stringSpacing
 }
+
+/**
+ * Mirror an x coordinate about the board's vertical centre for a left-handed
+ * layout: the nut moves to the right and ascending frets run leftwards.
+ * Reflecting across `width` (rather than `boardRight`) keeps the reserved nut
+ * area and right margin symmetric, so open-string markers and the right edge
+ * stay on-canvas. The y axis (string order) is unchanged.
+ */
+export function mirrorX(layout: FretboardLayout, x: number): number {
+  return layout.width - x
+}

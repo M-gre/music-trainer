@@ -20,6 +20,7 @@
  * AudioContext is ever constructed in tests.
  */
 
+import { readPersistedMasterVolume } from '../globalSettings.ts'
 import { midiToFreq, type Midi } from '../theory/notes.ts'
 import { DrumKit, type DrumVoice, type PlayDrumOptions } from './drums.ts'
 import {
@@ -181,7 +182,10 @@ export interface ClickSpec {
 export class AudioEngine {
   private ctx: MinimalAudioContext | null = null
   private master: GainNodeLike | null = null
-  private volume = DEFAULT_MASTER_VOLUME
+  // Seed from the persisted global setting so playback starts at the user's
+  // chosen level; `setMasterVolume` (e.g. a per-tool volume slider) overrides
+  // it for the session before the master chain is even built.
+  private volume = readPersistedMasterVolume()
   private drumKit: DrumKit | null = null
 
   constructor(private readonly createContext: AudioContextFactory = defaultContextFactory) {}

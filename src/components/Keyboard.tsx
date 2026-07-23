@@ -11,6 +11,8 @@
  * `keyboardGeometry.ts`.
  */
 
+import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
+import { applySpellingPreference } from '../lib/globalSettings.ts'
 import type { MarkerVariant } from './Fretboard.tsx'
 import {
   blackKeyMidis,
@@ -60,7 +62,11 @@ export interface KeyboardProps {
    * for orientation) or `'all'` (every white key). Default `'c'`.
    */
   showLabels?: KeyboardLabelMode
-  /** Accidental spelling for default labels. Default `'sharp'`. */
+  /**
+   * Accidental spelling for default labels (the tool's context-dependent
+   * choice). The global spelling preference is applied on top: `'auto'` keeps
+   * this value, `'sharps'`/`'flats'` override it. Defaults to `'sharp'`.
+   */
   prefer?: 'sharp' | 'flat'
   /** Pixel layout overrides (partial). */
   layoutConfig?: Partial<KeyboardLayoutConfig>
@@ -83,6 +89,10 @@ export function Keyboard({
   className,
   ariaLabel,
 }: KeyboardProps) {
+  const { settings } = useGlobalSettings()
+  // The global spelling preference overrides the tool's context choice unless
+  // it is 'auto', which keeps the caller-supplied `prefer` as-is.
+  const resolvedPrefer = applySpellingPreference(settings.spellingPreference, prefer)
   const config: KeyboardLayoutConfig = { ...DEFAULT_LAYOUT, ...layoutConfig }
   const octRange = octaveRangeToMidi(fromOctave, toOctave)
   const rawFrom = from ?? octRange.from
@@ -149,7 +159,7 @@ export function Keyboard({
           y={layout.boardTop + layout.whiteHeight - 6}
           textAnchor="middle"
         >
-          {defaultKeyLabel(midi, prefer, true)}
+          {defaultKeyLabel(midi, resolvedPrefer, true)}
         </text>
       ))}
 
@@ -159,7 +169,7 @@ export function Keyboard({
         .map((midi) => {
           const marker = markerByMidi.get(midi)!
           const variant = marker.variant ?? 'default'
-          const label = marker.label ?? defaultKeyLabel(midi, prefer)
+          const label = marker.label ?? defaultKeyLabel(midi, resolvedPrefer)
           const black = isBlackKey(midi)
           const cy = layout.boardTop + (black ? layout.blackHeight : layout.whiteHeight) - dotR - dotPad
           return (
