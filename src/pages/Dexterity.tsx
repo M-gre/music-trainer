@@ -1,0 +1,472 @@
+/**
+ * Dexterity Exercises (M5) — renders fret/finger exercise patterns on the shared
+ * `Fretboard` with the finger number as each dot's label, plays them back in
+ * time with the metronome `Scheduler`, and advances a highlighted current-step
+ * marker in sync.
+ *
+ * All the musical thinking lives in the pure, tested `src/lib/exercises.ts`
+ * (pattern format + expansion + step sequencing + position advance) and
+ * `src/lib/dexteritySettings.ts` (persisted preferences). This component is the
+ * thin impure shell: React state, the `Scheduler`/`AudioEngine` wiring, a
+ * requestAnimationFrame indicator driven by `scheduler.currentPosition()`, and
+ * persistence. Following the other tool pages, the AudioContext is created and
+ * resumed only inside the Start handler (`ensureRunning`), never at mount.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fretboard, type FretboardMarker, type MarkerVariant } from '../components/Fretboard.tsx'
+import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
+import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
+import {
+  DEFAULT_CLICK_VOICE_ID,
+  getAudioEngine,
+  resolveClickParams,
+  Scheduler,
+  secondsPerSubdivision,
+  type SchedulerEvent,
+} from '../lib/audio/index.ts'
+import {
+  clampBpm,
+  clampFret,
+  dexteritySettingsStore,
+  MAX_BPM,
+  MAX_FRET,
+  MIN_BPM,
+  MIN_FRET,
+  NOTES_PER_BEAT_OPTIONS,
+  normalizeDexteritySettings,
+} from '../lib/dexteritySettings.ts'
+import {
+  BUILTIN_PATTERNS,
+  expandPattern,
+  getPattern,
+  locateStep,
+  positionForLoop,
+  stepTimings,
+  type ExerciseStep,
+} from '../lib/exercises.ts'
+import { midiToName } from '../lib/theory/notes.ts'
+
+const NOTES_PER_BEAT_LABELS: Record<number, string> = {
+  1: 'Quarter',
+  2: 'Eighth',
+  3: 'Triplet',
+  4: 'Sixteenth',
+}
+
+/** Fraction of a grid step a note sounds for, leaving a small gap between notes. */
+const NOTE_LENGTH = 0.9
+
+export function Dexterity() {
+  const engineRef = useRef(getAudioEngine())
+  const schedulerRef = useRef<Scheduler | null>(null)
+  const rafRef = useRef<number | null>(null)
+
+  const instrument = useInstrumentSettings()
+  const tuning = instrument.tuning
+
+  const [settings] = useState(() => normalizeDexteritySettings(dexteritySettingsStore.get()))
+  const [patternId, setPatternId] = useState(settings.patternId)
+  const [position, setPosition] = useState(settings.position)
+  const [bpm, setBpm] = useState(settings.bpm)
+  const [notesPerBeat, setNotesPerBeat] = useState(settings.notesPerBeat)
+  const [autoAdvance, setAutoAdvance] = useState(settings.autoAdvance)
+  const [advanceMin, setAdvanceMin] = useState(settings.advanceMin)
+  const [advanceMax, setAdvanceMax] = useState(settings.advanceMax)
+  const [clickOn, setClickOn] = useState(true)
+
+  const [running, setRunning] = useState(false)
+  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null)
+  const [activeLoop, setActiveLoop] = useState(0)
+
+  const pattern = useMemo(() => getPattern(patternId), [patternId])
+  const range = useMemo(
+    () => (autoAdvance ? { min: Math.min(advanceMin, advanceMax), max: Math.max(advanceMin, advanceMax) } : undefined),
+    [autoAdvance, advanceMin, advanceMax],
+  )
+
+  // The position currently on the board: the chosen start when stopped, or the
+  // auto-advanced position for the loop being heard when running.
+  const displayPosition = running ? positionForLoop(activeLoop, position, range) : position
+
+  const displaySteps = useMemo(
+    () => expandPattern(pattern, { tuning, position: displayPosition }),
+    [pattern, tuning, displayPosition],
+  )
+
+  // Step count + durations are independent of the position, so this timing is
+  // valid for every loop; the rAF indicator and the audio callback share it.
+  const timing = useMemo(() => stepTimings(displaySteps), [displaySteps])
+  const timingRef = useRef(timing)
+  timingRef.current = timing
+
+  // Live values the stable scheduler callback reads (so its identity never
+  // changes as settings do), mirroring the Metronome page.
+  const patternRef = useRef(pattern)
+  const tuningRef = useRef(tuning)
+  const positionRef = useRef(position)
+  const rangeRef = useRef(range)
+  const notesPerBeatRef = useRef(notesPerBeat)
+  const bpmRef = useRef(bpm)
+  const clickRef = useRef(clickOn)
+  patternRef.current = pattern
+  tuningRef.current = tuning
+  positionRef.current = position
+  rangeRef.current = range
+  notesPerBeatRef.current = notesPerBeat
+  bpmRef.current = bpm
+  clickRef.current = clickOn
+
+  // Persist preferences whenever they change.
+  useEffect(() => {
+    dexteritySettingsStore.set({ patternId, position, bpm, notesPerBeat, autoAdvance, advanceMin, advanceMax })
+  }, [patternId, position, bpm, notesPerBeat, autoAdvance, advanceMin, advanceMax])
+
+  // Apply tempo / subdivision changes to a live scheduler without stopping it.
+  useEffect(() => {
+    schedulerRef.current?.setTempo(bpm)
+  }, [bpm])
+  useEffect(() => {
+    schedulerRef.current?.setMeter({ subdivisionsPerBeat: notesPerBeat })
+  }, [notesPerBeat])
+
+  // Per grid-step: play the current step's note (on its onset) plus an optional
+  // metronome click on the beat. Reads everything from refs so its identity is
+  // stable across the scheduler's lifetime.
+  const handleEvent = useCallback((event: SchedulerEvent, when: number) => {
+    const engine = engineRef.current
+    const currentPattern = patternRef.current
+    const currentTuning = tuningRef.current
+
+    const stepList = expandPattern(currentPattern, {
+      tuning: currentTuning,
+      position: positionRef.current,
+    })
+    const loopTiming = stepTimings(stepList)
+    const loc = locateStep(event.step, loopTiming)
+    if (!loc) return
+
+    if (loc.isOnset) {
+      const loopPosition = positionForLoop(loc.loop, positionRef.current, rangeRef.current)
+      const notes = expandPattern(currentPattern, { tuning: currentTuning, position: loopPosition })
+      const step = notes[loc.stepIndex]
+      if (step) {
+        const stepSeconds = secondsPerSubdivision(bpmRef.current, notesPerBeatRef.current)
+        engine.playNote(step.midi, step.duration * stepSeconds * NOTE_LENGTH, { when, velocity: 0.9 })
+      }
+    }
+
+    // Metronome pulse on the beat (grid subdivision 0), quieter off-beats.
+    if (clickRef.current) {
+      const level = event.subdivision === 0 ? 'high' : 'low'
+      const spec = resolveClickParams(DEFAULT_CLICK_VOICE_ID, level, event.subdivision !== 0)
+      if (spec) engine.playClick({ ...spec, when })
+    }
+  }, [])
+
+  // Drive the current-step indicator from the audio-accurate position.
+  const runIndicator = useCallback(() => {
+    const scheduler = schedulerRef.current
+    if (scheduler) {
+      const pos = scheduler.currentPosition()
+      if (pos) {
+        const loc = locateStep(pos.step, timingRef.current)
+        if (loc) {
+          setActiveStepIndex((prev) => (prev === loc.stepIndex ? prev : loc.stepIndex))
+          setActiveLoop((prev) => (prev === loc.loop ? prev : loc.loop))
+        }
+      }
+    }
+    rafRef.current = requestAnimationFrame(runIndicator)
+  }, [])
+
+  const start = useCallback(async () => {
+    const engine = engineRef.current
+    await engine.ensureRunning()
+    let scheduler = schedulerRef.current
+    if (!scheduler) {
+      scheduler = new Scheduler(engine, {
+        bpm: bpmRef.current,
+        beatsPerBar: 4,
+        subdivisionsPerBeat: notesPerBeatRef.current,
+        onEvent: handleEvent,
+      })
+      schedulerRef.current = scheduler
+    } else {
+      scheduler.setTempo(bpmRef.current)
+      scheduler.setMeter({ beatsPerBar: 4, subdivisionsPerBeat: notesPerBeatRef.current })
+    }
+    setActiveStepIndex(null)
+    setActiveLoop(0)
+    scheduler.start()
+    setRunning(true)
+    if (rafRef.current === null) rafRef.current = requestAnimationFrame(runIndicator)
+  }, [handleEvent, runIndicator])
+
+  const stop = useCallback(() => {
+    schedulerRef.current?.stop()
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    setRunning(false)
+    setActiveStepIndex(null)
+    setActiveLoop(0)
+  }, [])
+
+  useEffect(
+    () => () => {
+      schedulerRef.current?.stop()
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    },
+    [],
+  )
+
+  const changeBpm = useCallback((next: number) => setBpm(clampBpm(next)), [])
+  const changePosition = useCallback((next: number) => setPosition(clampFret(next)), [])
+
+  // Board fret range: pad one fret either side of the notes on show.
+  const frets = displaySteps.map((s) => s.fret)
+  const minFret = frets.length ? Math.min(...frets) : displayPosition
+  const maxFret = frets.length ? Math.max(...frets) : displayPosition + 4
+  const fromFret = Math.max(0, minFret - 1)
+  const toFret = Math.min(MAX_FRET + 2, maxFret + 1)
+
+  const markers = buildMarkers(displaySteps, running, activeStepIndex)
+
+  return (
+    <div className="tool-page">
+      <div className="tool-page-header">
+        <h1>Dexterity Exercises</h1>
+        <p className="tool-page-lead">
+          Fretting-hand drills rendered with finger numbers and played in time. The current step
+          lights up as it sounds. Audio starts only when you press Start.
+        </p>
+      </div>
+
+      <div className="tool-controls">
+        <div className="tool-control-group dx-pattern-group">
+          <span className="tool-control-label">Pattern</span>
+          <div className="dx-patterns" role="radiogroup" aria-label="Exercise pattern">
+            {BUILTIN_PATTERNS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={p.id === patternId}
+                className={`dx-pattern${p.id === patternId ? ' dx-pattern-active' : ''}`}
+                onClick={() => setPatternId(p.id)}
+              >
+                <span className="dx-pattern-name">{p.name}</span>
+                <span className="dx-pattern-desc">{p.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Instrument</span>
+          <InstrumentPicker
+            value={tuning}
+            onChange={(t) => instrument.setTuningId(t.id)}
+            className="dx-instrument"
+          />
+        </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Starting fret</span>
+          <div className="dx-position">
+            <button
+              type="button"
+              className="dx-stepper"
+              onClick={() => changePosition(position - 1)}
+              aria-label="Lower starting fret"
+              disabled={running && autoAdvance}
+            >
+              −
+            </button>
+            <span className="dx-position-value">{displayPosition}</span>
+            <button
+              type="button"
+              className="dx-stepper"
+              onClick={() => changePosition(position + 1)}
+              aria-label="Raise starting fret"
+              disabled={running && autoAdvance}
+            >
+              +
+            </button>
+          </div>
+          <input
+            type="range"
+            className="dx-slider"
+            min={MIN_FRET}
+            max={MAX_FRET}
+            value={position}
+            aria-label="Starting fret"
+            onChange={(e) => changePosition(Number(e.target.value))}
+          />
+        </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Notes per beat</span>
+          <div className="dx-segmented" role="group">
+            {NOTES_PER_BEAT_OPTIONS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`dx-segment${n === notesPerBeat ? ' dx-segment-active' : ''}`}
+                aria-pressed={n === notesPerBeat}
+                onClick={() => setNotesPerBeat(n)}
+              >
+                {NOTES_PER_BEAT_LABELS[n] ?? String(n)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="tool-control-group dx-tempo-group">
+          <span className="tool-control-label">Tempo</span>
+          <div className="dx-tempo-readout">
+            <span className="dx-tempo-value">{bpm}</span>
+            <span className="dx-tempo-unit">BPM</span>
+          </div>
+          <div className="dx-steppers">
+            <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm - 5)}>
+              −5
+            </button>
+            <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm - 1)}>
+              −1
+            </button>
+            <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm + 1)}>
+              +1
+            </button>
+            <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm + 5)}>
+              +5
+            </button>
+          </div>
+          <input
+            type="range"
+            className="dx-slider"
+            min={MIN_BPM}
+            max={MAX_BPM}
+            value={bpm}
+            aria-label="Tempo in beats per minute"
+            onChange={(e) => changeBpm(Number(e.target.value))}
+          />
+        </div>
+
+        <div className="tool-control-group dx-advance-group">
+          <span className="tool-control-label">Auto-advance position</span>
+          <label className="dx-toggle">
+            <input
+              type="checkbox"
+              checked={autoAdvance}
+              onChange={(e) => setAutoAdvance(e.target.checked)}
+            />
+            <span>Move up one fret each loop</span>
+          </label>
+          <div className={`dx-range${autoAdvance ? '' : ' dx-range-off'}`}>
+            <label className="dx-range-field">
+              <span>From</span>
+              <input
+                type="number"
+                min={MIN_FRET}
+                max={MAX_FRET}
+                value={advanceMin}
+                disabled={!autoAdvance}
+                onChange={(e) => setAdvanceMin(clampFret(Number(e.target.value)))}
+              />
+            </label>
+            <label className="dx-range-field">
+              <span>To</span>
+              <input
+                type="number"
+                min={MIN_FRET}
+                max={MAX_FRET}
+                value={advanceMax}
+                disabled={!autoAdvance}
+                onChange={(e) => setAdvanceMax(clampFret(Number(e.target.value)))}
+              />
+            </label>
+          </div>
+          <label className="dx-toggle">
+            <input type="checkbox" checked={clickOn} onChange={(e) => setClickOn(e.target.checked)} />
+            <span>Metronome click</span>
+          </label>
+        </div>
+      </div>
+
+      <div className="dx-board">
+        <Fretboard
+          tuning={tuning}
+          fromFret={fromFret}
+          toFret={toFret}
+          markers={markers}
+          ariaLabel={`${pattern.name} on ${tuning.name}`}
+        />
+      </div>
+
+      <div className="dx-strip" role="list" aria-label="Exercise step sequence">
+        {displaySteps.map((step, i) => {
+          const active = running && i === activeStepIndex
+          return (
+            <div
+              key={`${i}-${step.string}-${step.fret}`}
+              role="listitem"
+              className={`dx-strip-step${active ? ' dx-strip-active' : ''}`}
+            >
+              <span className="dx-strip-order">{i + 1}</span>
+              <span className="dx-strip-finger">{step.finger}</span>
+              <span className="dx-strip-meta">
+                {midiToName(step.midi)} · str {step.string + 1} · fr {step.fret}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="dx-transport">
+        <button
+          type="button"
+          className={`dx-start${running ? ' dx-start-active' : ''}`}
+          onClick={() => (running ? stop() : void start())}
+        >
+          {running ? 'Stop' : 'Start'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Build one marker per unique board cell: the finger number as its label, the
+ * current step accented, other steps dimmed while running (or the first step
+ * marked as the start position when stopped). Patterns that revisit a cell
+ * (e.g. an up-and-down spider walk) collapse to a single marker, and the
+ * highlighted variant always wins the cell.
+ */
+function buildMarkers(
+  steps: readonly ExerciseStep[],
+  running: boolean,
+  activeStepIndex: number | null,
+): FretboardMarker[] {
+  const byCell = new Map<string, FretboardMarker>()
+  steps.forEach((step, i) => {
+    const key = `${step.string}-${step.fret}`
+    const highlighted = running ? i === activeStepIndex : i === 0
+    const variant: MarkerVariant = running
+      ? i === activeStepIndex
+        ? 'accent'
+        : 'dim'
+      : i === 0
+        ? 'root'
+        : 'default'
+    const existing = byCell.get(key)
+    // Keep an already-claimed highlight; otherwise (re)write the cell.
+    if (existing && (existing.variant === 'accent' || existing.variant === 'root') && !highlighted) {
+      return
+    }
+    byCell.set(key, { string: step.string, fret: step.fret, label: String(step.finger), variant })
+  })
+  return [...byCell.values()]
+}
