@@ -8,8 +8,10 @@ import {
   defaultKeyLabel,
   isBlackKey,
   isWhiteKey,
+  keyboardKeyLabel,
   keyCenterX,
   keyHeight,
+  nextKeyboardMidi,
   octaveRangeToMidi,
   snapRangeToWhite,
   whiteKeyIndex,
@@ -213,5 +215,46 @@ describe('coordinate helpers', () => {
   it('reports the correct height per key type', () => {
     expect(keyHeight(layout, nameToMidi('C4'))).toBe(layout.whiteHeight)
     expect(keyHeight(layout, nameToMidi('C#4'))).toBe(layout.blackHeight)
+  })
+})
+
+describe('nextKeyboardMidi', () => {
+  // One octave C4..B4 (midi 60..71), every semitone drawn.
+  const midis = Array.from({ length: 12 }, (_, i) => 60 + i)
+
+  it('steps one key right and left, clamped to the range', () => {
+    expect(nextKeyboardMidi(60, 'ArrowRight', midis)).toBe(61)
+    expect(nextKeyboardMidi(71, 'ArrowRight', midis)).toBe(71)
+    expect(nextKeyboardMidi(61, 'ArrowLeft', midis)).toBe(60)
+    expect(nextKeyboardMidi(60, 'ArrowLeft', midis)).toBe(60)
+  })
+
+  it('jumps an octave with up/down when that key exists, else clamps', () => {
+    const twoOct = Array.from({ length: 24 }, (_, i) => 60 + i) // C4..B5
+    expect(nextKeyboardMidi(60, 'ArrowUp', twoOct)).toBe(72)
+    expect(nextKeyboardMidi(72, 'ArrowDown', twoOct)).toBe(60)
+    // No key an octave above within a single-octave range → clamp to the top.
+    expect(nextKeyboardMidi(65, 'ArrowUp', midis)).toBe(71)
+    expect(nextKeyboardMidi(65, 'ArrowDown', midis)).toBe(60)
+  })
+
+  it('jumps to the ends with Home/End and ignores other keys', () => {
+    expect(nextKeyboardMidi(65, 'Home', midis)).toBe(60)
+    expect(nextKeyboardMidi(65, 'End', midis)).toBe(71)
+    expect(nextKeyboardMidi(65, 'Enter', midis)).toBe(65)
+    expect(nextKeyboardMidi(65, 'ArrowRight', [])).toBe(65)
+  })
+})
+
+describe('keyboardKeyLabel', () => {
+  it('names the key with its octave', () => {
+    expect(keyboardKeyLabel(nameToMidi('C4'))).toBe('C4')
+    expect(keyboardKeyLabel(nameToMidi('A2'))).toBe('A2')
+  })
+
+  it('honours the accidental spelling preference', () => {
+    const midi = nameToMidi('C#4')
+    expect(keyboardKeyLabel(midi, 'sharp')).toBe('C#4')
+    expect(keyboardKeyLabel(midi, 'flat')).toBe('Db4')
   })
 })

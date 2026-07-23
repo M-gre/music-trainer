@@ -394,6 +394,7 @@ export function CircleOfFifths() {
                     type="button"
                     className="cf-play-button cf-play-button-small"
                     disabled={busy}
+                    aria-label={`Play the ${name} triad (${triad.numeral})`}
                     onClick={() => void playTriad(triad.root, triad.quality.intervals)}
                   >
                     Play

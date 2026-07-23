@@ -4456,3 +4456,62 @@ a.tool-card:hover {
   background: var(--accent);
   border-radius: 8px;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Visible keyboard-focus ring for every interactive control, consistent with
+   the dark theme's accent. Scoped to interactive elements so it never rings
+   the page body; `:focus-visible` keeps it off mouse/touch clicks. Components
+   with their own focus-visible rule (e.g. .cf-segment) still win via
+   specificity. */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Number-key hint badge shown in the corner of answerable option buttons. */
+.tq-option-btn,
+.et-answer,
+.fnt-note-btn,
+.nr-name {
+  position: relative;
+}
+
+
+/* The interactive Fretboard/Keyboard expose their positions as focusable
+   buttons with a roving tabindex. The global [tabindex]:focus-visible ring
+   above renders unreliably on SVG children, so ring these explicitly with a
+   stroke-friendly outline (matching the .cf-segment pattern). */
+.fb-hit:focus-visible,
+.kb-key:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Fallback for engines that ignore outline on SVG shapes: also paint a stroke. */
+.kb-key:focus-visible {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+

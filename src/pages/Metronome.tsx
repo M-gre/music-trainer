@@ -236,7 +236,7 @@ export function Metronome() {
       <div className="tool-controls">
         <div className="tool-control-group mn-tempo-group">
           <span className="tool-control-label">Tempo</span>
-          <div className="mn-tempo-readout">
+          <div className="mn-tempo-readout" aria-live="polite">
             <span className="mn-tempo-value">{tempo}</span>
             <span className="mn-tempo-unit">BPM</span>
           </div>
@@ -272,6 +272,7 @@ export function Metronome() {
             value={beatsPerBar}
             onChange={setBeatsPerBar}
             renderLabel={(n) => String(n)}
+            ariaLabel="Beats per bar"
           />
         </div>
 
@@ -282,6 +283,7 @@ export function Metronome() {
             value={subdivisionsPerBeat}
             onChange={setSubdivisionsPerBeat}
             renderLabel={(n) => SUBDIVISION_LABELS[n] ?? String(n)}
+            ariaLabel="Subdivision"
           />
         </div>
 
@@ -327,11 +329,18 @@ interface SegmentedProps<T extends number> {
   value: T
   onChange: (value: T) => void
   renderLabel: (value: T) => string
+  ariaLabel?: string
 }
 
-function Segmented<T extends number>({ options, value, onChange, renderLabel }: SegmentedProps<T>) {
+function Segmented<T extends number>({
+  options,
+  value,
+  onChange,
+  renderLabel,
+  ariaLabel,
+}: SegmentedProps<T>) {
   return (
-    <div className="mn-segmented" role="group">
+    <div className="mn-segmented" role="group" aria-label={ariaLabel}>
       {options.map((option) => (
         <button
           key={option}

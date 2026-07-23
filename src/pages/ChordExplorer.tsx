@@ -139,7 +139,7 @@ export function ChordExplorer() {
       <div className="tool-controls">
         <div className="tool-control-group">
           <span className="tool-control-label">Root</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Root note">
             {ROOTS.map((pc) => (
               <button
                 key={pc}
@@ -156,7 +156,7 @@ export function ChordExplorer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Inversion</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Inversion">
             {inversionOptions.map((i) => (
               <button
                 key={i}
@@ -173,7 +173,7 @@ export function ChordExplorer() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Fretboard labels</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Fretboard marker labels">
             {(['interval', 'note'] as const).map((mode) => (
               <button
                 key={mode}
@@ -194,7 +194,7 @@ export function ChordExplorer() {
         {QUALITY_GROUP_ORDER.map((group) => (
           <div key={group} className="ce-quality-subgroup">
             <span className="ce-quality-subgroup-label">{QUALITY_GROUP_LABELS[group]}</span>
-            <div className="mn-segmented" role="group">
+            <div className="mn-segmented" role="group" aria-label={QUALITY_GROUP_LABELS[group]}>
               {GROUPED_QUALITIES[group].map((q) => (
                 <button
                   key={q.id}

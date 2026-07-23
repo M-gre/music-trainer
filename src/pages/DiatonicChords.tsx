@@ -132,7 +132,7 @@ export function DiatonicChords() {
       <div className="tool-controls">
         <div className="tool-control-group">
           <span className="tool-control-label">Root</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Root note">
             {ROOTS.map((pc) => (
               <button
                 key={pc}
@@ -149,7 +149,7 @@ export function DiatonicChords() {
 
         <div className="tool-control-group">
           <span className="tool-control-label">Scale</span>
-          <div className="mn-segmented" role="group">
+          <div className="mn-segmented" role="group" aria-label="Scale">
             {DIATONIC_SCALE_OPTIONS.map((opt) => (
               <button
                 key={opt.id}

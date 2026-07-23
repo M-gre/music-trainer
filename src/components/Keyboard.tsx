@@ -11,6 +11,7 @@
  * `keyboardGeometry.ts`.
  */
 
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
 import { applySpellingPreference } from '../lib/globalSettings.ts'
 import type { MarkerVariant } from './Fretboard.tsx'
@@ -22,7 +23,9 @@ import {
   defaultKeyLabel,
   isBlackKey,
   type KeyboardLayoutConfig,
+  keyboardKeyLabel,
   keyCenterX,
+  nextKeyboardMidi,
   octaveRangeToMidi,
   whiteKeyMidis,
   whiteKeyX,
@@ -103,6 +106,40 @@ export function Keyboard({
   const blacks = blackKeyMidis(layout.from, layout.to)
   const markerByMidi = new Map(markers.map((m) => [m.midi, m]))
 
+  // Roving tabindex: one tabstop for the whole keybed; arrow keys move a single
+  // focused key. Every drawn key is a consecutive midi in [from, to].
+  const orderedMidis = Array.from({ length: layout.to - layout.from + 1 }, (_, i) => layout.from + i)
+  const [cursor, setCursor] = useState(layout.from)
+  const keyRefs = useRef(new Map<number, SVGRectElement>())
+  const activeMidi = orderedMidis.includes(cursor) ? cursor : layout.from
+
+  const keyA11y = (midi: number) =>
+    onKeyClick
+      ? ({
+          ref: (el: SVGRectElement | null) => {
+            const map = keyRefs.current
+            if (el) map.set(midi, el)
+            else map.delete(midi)
+          },
+          role: 'button' as const,
+          tabIndex: midi === activeMidi ? 0 : -1,
+          'aria-label': keyboardKeyLabel(midi, resolvedPrefer),
+          onKeyDown: (e: ReactKeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onKeyClick({ midi })
+              return
+            }
+            const next = nextKeyboardMidi(midi, e.key, orderedMidis)
+            if (next !== midi) {
+              e.preventDefault()
+              setCursor(next)
+              keyRefs.current.get(next)?.focus()
+            }
+          },
+        })
+      : {}
+
   // Marker dot radius fits inside the narrower black keys.
   const dotR = layout.blackWidth * 0.42
   const dotPad = 8
@@ -118,7 +155,7 @@ export function Keyboard({
       className={`kb-keyboard${onKeyClick ? ' kb-interactive' : ''}${className ? ` ${className}` : ''}`}
       viewBox={`0 0 ${layout.width} ${layout.height}`}
       width="100%"
-      role="img"
+      role={onKeyClick ? 'group' : 'img'}
       aria-label={ariaLabel ?? 'piano keyboard'}
       preserveAspectRatio="xMidYMid meet"
     >
@@ -133,6 +170,7 @@ export function Keyboard({
           height={layout.whiteHeight}
           rx={3}
           onClick={onKeyClick ? () => onKeyClick({ midi }) : undefined}
+          {...keyA11y(midi)}
         />
       ))}
 
@@ -147,6 +185,7 @@ export function Keyboard({
           height={layout.blackHeight}
           rx={2}
           onClick={onKeyClick ? () => onKeyClick({ midi }) : undefined}
+          {...keyA11y(midi)}
         />
       ))}
 

@@ -11,6 +11,72 @@
 
 import { midiToPc, pcToName } from '../lib/theory/notes.ts'
 
+/** A clickable board cell in roving-tabindex navigation. */
+export interface FretboardCursor {
+  /** String index, 0 = lowest-pitched string. */
+  string: number
+  /** Fret number of the cell. */
+  fret: number
+}
+
+/**
+ * Move a roving-tabindex cursor one step within the clickable grid in response
+ * to an arrow / Home / End key, clamped to the grid (no wrapping). Frets are
+ * addressed through the ordered `clickableFrets` array (ascending), so callers
+ * that mirror the board for left-handed players can simply swap the Left/Right
+ * key before calling. Any other key returns the cursor unchanged, letting the
+ * caller detect that nothing moved.
+ *
+ * Vertical keys map to the visual layout: string index 0 is drawn at the
+ * bottom, so ArrowUp raises the index and ArrowDown lowers it.
+ */
+export function nextFretboardCursor(
+  current: FretboardCursor,
+  key: string,
+  stringCount: number,
+  clickableFrets: readonly number[],
+): FretboardCursor {
+  if (clickableFrets.length === 0 || stringCount <= 0) return current
+  const maxString = stringCount - 1
+  const rawIdx = clickableFrets.indexOf(current.fret)
+  const idx = rawIdx < 0 ? 0 : rawIdx
+  const fretAt = (i: number): number =>
+    clickableFrets[Math.max(0, Math.min(clickableFrets.length - 1, i))]!
+  switch (key) {
+    case 'ArrowUp':
+      return { string: Math.min(maxString, current.string + 1), fret: current.fret }
+    case 'ArrowDown':
+      return { string: Math.max(0, current.string - 1), fret: current.fret }
+    case 'ArrowRight':
+      return { string: current.string, fret: fretAt(idx + 1) }
+    case 'ArrowLeft':
+      return { string: current.string, fret: fretAt(idx - 1) }
+    case 'Home':
+      return { string: current.string, fret: fretAt(0) }
+    case 'End':
+      return { string: current.string, fret: fretAt(clickableFrets.length - 1) }
+    default:
+      return current
+  }
+}
+
+/**
+ * Accessible label for a single board position, e.g. `"E string, fret 5, A"`
+ * or `"A string, open, A"`. `openMidi` is the string's open pitch (its name
+ * identifies the string) and `noteMidi` the pitch actually sounded there.
+ */
+export function fretboardPositionLabel(
+  openMidi: number,
+  fret: number,
+  noteMidi: number,
+  prefer: 'sharp' | 'flat' = 'sharp',
+): string {
+  const stringName = pcToName(midiToPc(openMidi), prefer)
+  const noteName = pcToName(midiToPc(noteMidi), prefer)
+  const where = fret === 0 ? 'open' : `fret ${fret}`
+  return `${stringName} string, ${where}, ${noteName}`
+}
+
 /** Frets carrying a single inlay dot on a standard guitar/bass neck. */
 export const SINGLE_INLAY_FRETS = [3, 5, 7, 9, 15, 17, 19, 21] as const
 /** Frets carrying a double inlay dot (the octave markers). */
