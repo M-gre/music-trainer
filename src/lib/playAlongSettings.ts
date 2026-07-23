@@ -23,6 +23,11 @@ import {
   type Groove,
 } from './audio/index.ts'
 import { Store, type StorageBackend } from './storage.ts'
+import {
+  DEFAULT_TEMPO_TRAINER,
+  normalizeTempoTrainerConfig,
+  type TempoTrainerConfig,
+} from './tempoTrainer.ts'
 
 export interface PlayAlongSettings {
   /** Id of the selected groove (see `GROOVES`). */
@@ -39,6 +44,8 @@ export interface PlayAlongSettings {
   accompaniment: AccompanimentSettings
   /** Show the current chord's tones on a fretboard (for building bass lines). */
   showChordTones: boolean
+  /** Tempo trainer: auto-increase the BPM every N bars up to a target. */
+  tempoTrainer: TempoTrainerConfig
 }
 
 /** Tempo range offered by the Play-Along slider/steppers. */
@@ -93,6 +100,7 @@ export const DEFAULT_PLAY_ALONG_SETTINGS: PlayAlongSettings = {
   mutedVoices: [],
   accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
   showChordTones: true,
+  tempoTrainer: DEFAULT_TEMPO_TRAINER,
 }
 
 /**
@@ -121,6 +129,7 @@ export function normalizePlayAlongSettings(value: unknown): PlayAlongSettings {
       typeof v.showChordTones === 'boolean'
         ? v.showChordTones
         : DEFAULT_PLAY_ALONG_SETTINGS.showChordTones,
+    tempoTrainer: normalizeTempoTrainerConfig(v.tempoTrainer),
   }
 }
 
@@ -133,11 +142,12 @@ export function createPlayAlongSettingsStore(backend?: StorageBackend): Store<Pl
     {
       key: 'settings:play-along',
       // v2 added the chord-progression accompaniment block; v3 added the
-      // `showChordTones` fretboard-panel toggle.
-      version: 3,
+      // `showChordTones` fretboard-panel toggle; v4 added the `tempoTrainer`
+      // auto-increase config.
+      version: 4,
       defaultValue: DEFAULT_PLAY_ALONG_SETTINGS,
       // Older data lacks the newer fields; normalizing fills them (and every
-      // other field) from the defaults, so a v1/v2 -> v3 upgrade never loses
+      // other field) from the defaults, so a v1/v2/v3 -> v4 upgrade never loses
       // existing drum or accompaniment prefs.
       migrate: (oldData) => normalizePlayAlongSettings(oldData),
     },

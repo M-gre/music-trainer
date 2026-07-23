@@ -53,6 +53,14 @@ import {
   playAlongSettingsStore,
   VOICE_LABELS,
 } from '../lib/playAlongSettings.ts'
+import {
+  barsToReachMax,
+  bpmForBar,
+  clampTrainerBpm,
+  TRAINER_EVERY_N_OPTIONS,
+  TRAINER_STEP_OPTIONS,
+  type TempoTrainerConfig,
+} from '../lib/tempoTrainer.ts'
 
 const KEY_OPTIONS = keyOptions()
 const BARS_PER_CHORD_OPTIONS = Array.from(
@@ -101,6 +109,16 @@ export function PlayAlong() {
   const [activeChordIndex, setActiveChordIndex] = useState<number | null>(null)
   const [showChordTones, setShowChordTones] = useState(settings.showChordTones)
 
+  // Tempo trainer: auto-increase the BPM every N bars up to a target. The
+  // tempo slider (`tempo`) acts as the start BPM; `currentBpm` is the effective
+  // tempo the transport is running at (equal to the slider until the ramp
+  // kicks in), shown prominently while playing.
+  const [trainerEnabled, setTrainerEnabled] = useState(settings.tempoTrainer.enabled)
+  const [trainerStep, setTrainerStep] = useState(settings.tempoTrainer.stepBpm)
+  const [trainerEveryN, setTrainerEveryN] = useState(settings.tempoTrainer.everyNBars)
+  const [trainerMax, setTrainerMax] = useState(settings.tempoTrainer.maxBpm)
+  const [currentBpm, setCurrentBpm] = useState(settings.bpm)
+
   const groove = getGroove(grooveId)
   const voices = grooveVoices(groove)
   const beatCount = grooveBeatsPerBar(groove)
@@ -124,6 +142,22 @@ export function PlayAlong() {
   const countInBarsRef = useRef(0)
   countInBarsRef.current = countIn ? 1 : 0
 
+  // Tempo-trainer config, with the tempo slider as the live start BPM. Held in
+  // a ref so the rAF loop reads the latest without re-creating the callback.
+  const trainerConfig = useMemo<TempoTrainerConfig>(
+    () => ({
+      enabled: trainerEnabled,
+      startBpm: tempo,
+      stepBpm: trainerStep,
+      everyNBars: trainerEveryN,
+      maxBpm: Math.max(tempo, trainerMax),
+    }),
+    [trainerEnabled, tempo, trainerStep, trainerEveryN, trainerMax],
+  )
+  const trainerConfigRef = useRef(trainerConfig)
+  trainerConfigRef.current = trainerConfig
+  const barsToTarget = barsToReachMax(trainerConfig)
+
   // Live comp-player configuration. `enabled` also requires a valid, non-empty
   // progression so a parse error silences the comp without stopping playback.
   const compConfig = useMemo<ChordCompConfig>(
@@ -133,11 +167,13 @@ export function PlayAlong() {
       voicings: resolved.voicings,
       barsPerChord: resolved.barsPerChord,
       beatsPerBar: beatCount,
-      bpm: tempo,
+      // Follow the effective (possibly ramped) tempo so the comp's chord
+      // durations track the tempo trainer.
+      bpm: currentBpm,
       countInBars: countIn ? 1 : 0,
       velocity: DEFAULT_COMP_VELOCITY,
     }),
-    [accEnabled, accStyle, resolved, beatCount, tempo, countIn],
+    [accEnabled, accStyle, resolved, beatCount, currentBpm, countIn],
   )
 
   // Persist preferences whenever they change.
@@ -157,6 +193,13 @@ export function PlayAlong() {
         style: accStyle,
       },
       showChordTones,
+      tempoTrainer: {
+        enabled: trainerEnabled,
+        startBpm: tempo,
+        stepBpm: trainerStep,
+        everyNBars: trainerEveryN,
+        maxBpm: Math.max(tempo, trainerMax),
+      },
     })
   }, [
     grooveId,
@@ -171,6 +214,10 @@ export function PlayAlong() {
     accBarsPerChord,
     accStyle,
     showChordTones,
+    trainerEnabled,
+    trainerStep,
+    trainerEveryN,
+    trainerMax,
   ])
 
   // Push accompaniment changes to the live comp player mid-playback.
@@ -179,9 +226,17 @@ export function PlayAlong() {
   }, [compConfig])
 
   // Apply changes to the live transport/player without stopping playback.
+  // With the trainer off the slider drives the transport directly; with it on
+  // the rAF ramp (below) owns the tempo and the slider only re-bases the start.
   useEffect(() => {
+    if (trainerEnabled) return
     schedulerRef.current?.setTempo(tempo)
-  }, [tempo])
+  }, [tempo, trainerEnabled])
+  // Keep the effective-BPM readout tracking the slider whenever the ramp is not
+  // actively driving it (stopped, or trainer disabled).
+  useEffect(() => {
+    if (!running || !trainerEnabled) setCurrentBpm(tempo)
+  }, [tempo, running, trainerEnabled])
   useEffect(() => {
     playerRef.current?.setGroove(getGroove(grooveId))
   }, [grooveId])
@@ -222,6 +277,18 @@ export function PlayAlong() {
               resolvedRef.current.barsPerChord,
             )
         setActiveChordIndex((prev) => (prev === chordIndex ? prev : chordIndex))
+
+        // Tempo trainer: ramp the transport tempo on bar boundaries. The
+        // scheduler's setTempo only re-spaces *future* steps, so the beat math
+        // (and the drum/comp players reading these same events) stays
+        // continuous across the change — nothing skips or desyncs.
+        const cfg = trainerConfigRef.current
+        if (cfg.enabled) {
+          const patternBar = pos.bar - countInBarsRef.current
+          const target = inCountIn ? clampTrainerBpm(cfg.startBpm) : bpmForBar(cfg, patternBar)
+          if (scheduler.tempo !== target) scheduler.setTempo(target)
+          setCurrentBpm((prev) => (prev === target ? prev : target))
+        }
       }
     }
     rafRef.current = requestAnimationFrame(runIndicator)
@@ -297,6 +364,11 @@ export function PlayAlong() {
   )
 
   const changeTempo = useCallback((next: number) => setTempo(clampPlayAlongTempo(next)), [])
+  const changeTrainerMax = useCallback(
+    (next: number) => setTrainerMax(clampPlayAlongTempo(next)),
+    [],
+  )
+  const trainerTarget = Math.max(tempo, trainerMax)
 
   const toggleMute = useCallback((voice: DrumVoice) => {
     setMuted((prev) => (prev.includes(voice) ? prev.filter((v) => v !== voice) : [...prev, voice]))
@@ -384,9 +456,14 @@ export function PlayAlong() {
           <div className="tool-control-group pa-tempo-group">
             <span className="tool-control-label">Tempo</span>
             <div className="pa-tempo-readout">
-              <span className="pa-tempo-value">{tempo}</span>
+              <span className={`pa-tempo-value${trainerEnabled && running ? ' pa-tempo-live' : ''}`}>
+                {running ? currentBpm : tempo}
+              </span>
               <span className="pa-tempo-unit">BPM</span>
             </div>
+            {trainerEnabled && (
+              <span className="pa-tempo-note">Trainer on · slider sets the start ({tempo})</span>
+            )}
             <div className="pa-steppers">
               <button type="button" className="pa-stepper" onClick={() => changeTempo(tempo - 5)}>
                 −5
@@ -461,6 +538,106 @@ export function PlayAlong() {
               />
               <span className="pa-volume-value">{volumePercent}%</span>
             </div>
+          </div>
+
+          <div className="tool-control-group pa-trainer-group">
+            <div className="pa-trainer-head">
+              <span className="tool-control-label">Tempo trainer</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={trainerEnabled}
+                className={`pa-toggle${trainerEnabled ? ' pa-toggle-on' : ''}`}
+                onClick={() => setTrainerEnabled((prev) => !prev)}
+              >
+                <span className="pa-toggle-track">
+                  <span className="pa-toggle-thumb" />
+                </span>
+                <span className="pa-toggle-label">{trainerEnabled ? 'On' : 'Off'}</span>
+              </button>
+            </div>
+
+            {trainerEnabled ? (
+              <>
+                <p className="pa-trainer-summary">
+                  Speeds up from <strong>{tempo}</strong> to <strong>{trainerTarget}</strong> BPM,
+                  +{trainerStep} every {trainerEveryN} {trainerEveryN === 1 ? 'bar' : 'bars'}
+                  {barsToTarget !== null ? ` · target in ${barsToTarget} bars` : ''}.
+                </p>
+
+                <span className="tool-control-label pa-trainer-field-label">Step</span>
+                <div className="pa-seg" role="radiogroup" aria-label="Tempo increase per step">
+                  {TRAINER_STEP_OPTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      role="radio"
+                      aria-checked={trainerStep === s}
+                      className={`pa-seg-btn${trainerStep === s ? ' pa-seg-btn-active' : ''}`}
+                      onClick={() => setTrainerStep(s)}
+                    >
+                      +{s}
+                    </button>
+                  ))}
+                </div>
+
+                <span className="tool-control-label pa-trainer-field-label">Every</span>
+                <div className="pa-seg" role="radiogroup" aria-label="Bars between increases">
+                  {TRAINER_EVERY_N_OPTIONS.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      role="radio"
+                      aria-checked={trainerEveryN === n}
+                      className={`pa-seg-btn${trainerEveryN === n ? ' pa-seg-btn-active' : ''}`}
+                      onClick={() => setTrainerEveryN(n)}
+                    >
+                      {n} {n === 1 ? 'bar' : 'bars'}
+                    </button>
+                  ))}
+                </div>
+
+                <span className="tool-control-label pa-trainer-field-label">Target BPM</span>
+                <div className="pa-trainer-target">
+                  <div className="pa-steppers">
+                    <button
+                      type="button"
+                      className="pa-stepper"
+                      onClick={() => changeTrainerMax(trainerTarget - 10)}
+                    >
+                      −10
+                    </button>
+                    <button
+                      type="button"
+                      className="pa-stepper"
+                      onClick={() => changeTrainerMax(trainerTarget - 5)}
+                    >
+                      −5
+                    </button>
+                    <button
+                      type="button"
+                      className="pa-stepper"
+                      onClick={() => changeTrainerMax(trainerTarget + 5)}
+                    >
+                      +5
+                    </button>
+                    <button
+                      type="button"
+                      className="pa-stepper"
+                      onClick={() => changeTrainerMax(trainerTarget + 10)}
+                    >
+                      +10
+                    </button>
+                  </div>
+                  <span className="pa-trainer-target-value">{trainerTarget} BPM</span>
+                </div>
+              </>
+            ) : (
+              <p className="pa-trainer-summary pa-trainer-summary-off">
+                Automatically nudges the tempo up as you play — enable to drill a passage while it
+                gradually speeds up.
+              </p>
+            )}
           </div>
         </div>
 

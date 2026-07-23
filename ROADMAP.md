@@ -52,7 +52,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [x] Play-Along page: groove picker, tempo slider, count-in, per-voice mute
 - [x] Chord progression accompaniment: pick key + progression (1-5-6-4, 2-5-1, 12-bar blues, custom degree input), synth pad/comping voice, bars-per-chord setting, current-chord display with next-chord preview
 - [x] Progression display shows chord tones on fretboard (for bass lines) while playing
-- [ ] Tempo trainer: auto-increase BPM every N bars
+- [x] Tempo trainer: auto-increase BPM every N bars
 
 ## M5 — Dexterity
 

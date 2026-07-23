@@ -13,6 +13,7 @@ import {
   normalizePlayAlongSettings,
   type PlayAlongSettings,
 } from './playAlongSettings.ts'
+import { DEFAULT_TEMPO_TRAINER } from './tempoTrainer.ts'
 
 describe('clampPlayAlongTempo', () => {
   it('clamps below and above the range', () => {
@@ -67,6 +68,13 @@ describe('normalizePlayAlongSettings', () => {
         style: 'stabs',
       },
       showChordTones: false,
+      tempoTrainer: {
+        enabled: true,
+        startBpm: 90,
+        stepBpm: 5,
+        everyNBars: 8,
+        maxBpm: 150,
+      },
     }
     expect(normalizePlayAlongSettings(value)).toEqual(value)
   })
@@ -86,6 +94,7 @@ describe('normalizePlayAlongSettings', () => {
       mutedVoices: [],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
       showChordTones: DEFAULT_PLAY_ALONG_SETTINGS.showChordTones,
+      tempoTrainer: DEFAULT_TEMPO_TRAINER,
     })
   })
 
@@ -123,6 +132,7 @@ describe('play-along settings store', () => {
       mutedVoices: ['kick', 'hat-closed'],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
       showChordTones: false,
+      tempoTrainer: DEFAULT_TEMPO_TRAINER,
     }
     createPlayAlongSettingsStore(backend).set(value)
     expect(createPlayAlongSettingsStore(backend).get()).toEqual(value)
@@ -153,10 +163,11 @@ describe('play-along settings store', () => {
       mutedVoices: ['snare'],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
       showChordTones: DEFAULT_PLAY_ALONG_SETTINGS.showChordTones,
+      tempoTrainer: DEFAULT_TEMPO_TRAINER,
     })
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(3)
+    expect(raw && JSON.parse(raw).v).toBe(4)
   })
 
   it('migrates v2 data (no showChordTones) by filling in the default', () => {
@@ -188,9 +199,39 @@ describe('play-along settings store', () => {
     expect(migrated.grooveId).toBe('bossa')
     expect(migrated.accompaniment.rootPc).toBe(2)
     expect(migrated.showChordTones).toBe(DEFAULT_PLAY_ALONG_SETTINGS.showChordTones)
+    expect(migrated.tempoTrainer).toEqual(DEFAULT_TEMPO_TRAINER)
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(3)
+    expect(raw && JSON.parse(raw).v).toBe(4)
+  })
+
+  it('migrates v3 data (no tempoTrainer) by filling in the default', () => {
+    const backend = memoryBackend()
+    // A v3 envelope has the chord-tones toggle but predates the tempo trainer.
+    backend.setItem(
+      'mt:settings:play-along',
+      JSON.stringify({
+        v: 3,
+        data: {
+          grooveId: 'funk',
+          bpm: 128,
+          countIn: true,
+          masterVolume: 0.6,
+          mutedVoices: [],
+          accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
+          showChordTones: false,
+        },
+      }),
+    )
+    const migrated = createPlayAlongSettingsStore(backend).get()
+    // Existing prefs survive; the new trainer block takes its default.
+    expect(migrated.grooveId).toBe('funk')
+    expect(migrated.bpm).toBe(128)
+    expect(migrated.showChordTones).toBe(false)
+    expect(migrated.tempoTrainer).toEqual(DEFAULT_TEMPO_TRAINER)
+    // The upgrade is persisted at the new version so it only runs once.
+    const raw = backend.getItem('mt:settings:play-along')
+    expect(raw && JSON.parse(raw).v).toBe(4)
   })
 
   it('normalizes corrupt persisted data back to defaults on read', () => {
