@@ -63,5 +63,6 @@ When adding ideas, add them as unchecked items in the right milestone.
 - [ ] Spaced repetition for all quiz tools (shared lib)
 - [ ] PWA manifest + service worker for full offline use (self-contained, CSP-compatible)
 - [ ] Keyboard shortcuts for quiz answering; accessibility pass (focus, ARIA, contrast)
+- [ ] Mobile/touch audit: 44px minimum tap targets on fretboard/keyboard hit areas, remove hover-only affordances, touch-action on controls, verify each tool at 390px width
 - [ ] Settings page: default instrument/tuning (bass & guitar, all string counts), left-handed fretboard flip, sharps/flats preference, volume
 - [ ] Custom tuning editor: define and save arbitrary tunings (name + per-string pitch) alongside the built-ins

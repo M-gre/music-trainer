@@ -67,8 +67,13 @@ The whole point of this site's security posture is having ~zero attack surface:
 - Test environment is `node` — lib code must not touch `window`/`document`.
   (Audio code: isolate Web Audio behind an interface so scheduling logic stays
   testable.)
-- Mobile matters: tools should be usable on a phone stand next to an amp.
-  Test layouts at narrow widths.
+- Mobile and touch matter: tools should be usable on a phone stand next to an
+  amp, operated with fingers, not a mouse. Test layouts at narrow widths
+  (~390px). Interactive elements need touch-sized tap targets (≥44px hit
+  areas — SVG hit rects may be larger than the visual element), no
+  hover-only affordances (every hover state needs a visible non-hover
+  equivalent), and `touch-action: manipulation` on tappable controls to
+  avoid double-tap zoom delays.
 - Keep the dark theme and CSS-variable palette in `src/styles.css`.
 
 ## Workflow for autonomous sessions
