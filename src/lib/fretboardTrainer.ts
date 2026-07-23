@@ -14,6 +14,7 @@
 import { midiToPc, type PitchClass } from './theory/notes.ts'
 import { fretMidi, type Tuning } from './theory/instruments.ts'
 import { pickAvoiding, type Rng } from './quiz.ts'
+import { pickWeightedByPc, type NoteStatsData } from './noteStats.ts'
 import { Store, type StorageBackend } from './storage.ts'
 
 export type QuizMode = 'find' | 'name' | 'findAll'
@@ -155,17 +156,46 @@ function sameQuestion(a: TrainerQuestion, b: TrainerQuestion): boolean {
 }
 
 /**
+ * Optional weakest-first picking: when supplied, `generateQuestion` biases
+ * toward the pitch classes the player is weakest on (see `noteStats.ts`)
+ * instead of drawing uniformly.
+ */
+export interface QuestionPicking {
+  stats: NoteStatsData
+  /** Wall-clock now (ms) for recency weighting. */
+  now: number
+}
+
+/** Candidates with `previous` filtered out, unless that would leave nothing. */
+function withoutPrevious(
+  candidates: TrainerQuestion[],
+  previous: TrainerQuestion | null,
+): TrainerQuestion[] {
+  if (previous === null) return candidates
+  const pool = candidates.filter((c) => !sameQuestion(c, previous))
+  return pool.length > 0 ? pool : candidates
+}
+
+/**
  * Generate the next question for `ctx`, avoiding an immediate repeat of
  * `previous`. Pure given `rng`. Throws if the context has no answerable
  * question (caller must ensure a non-empty string list and valid range).
+ *
+ * With `picking` supplied, questions are biased toward the weakest pitch
+ * classes; without it, they are drawn uniformly.
  */
 export function generateQuestion(
   ctx: QuestionContext,
   previous: TrainerQuestion | null,
   rng: Rng,
+  picking?: QuestionPicking,
 ): TrainerQuestion {
   const candidates = possibleQuestions(ctx)
   if (candidates.length === 0) throw new Error('generateQuestion: no answerable questions')
+  if (picking) {
+    const pool = withoutPrevious(candidates, previous)
+    return pickWeightedByPc(pool, (q) => q.pc, picking.stats, rng, picking.now)
+  }
   return pickAvoiding(candidates, previous, rng, sameQuestion)
 }
 
@@ -179,6 +209,8 @@ export interface FretboardTrainerSettings {
   accidentals: 'sharp' | 'flat'
   /** String indices the player has switched off. New strings are on by default. */
   excludedStrings: number[]
+  /** Bias question picking toward the notes the player is weakest on. */
+  focusWeak: boolean
 }
 
 /** Highest fret any preset/range may reach (matches `DEFAULT_FRET_COUNT`). */
@@ -197,6 +229,7 @@ export const DEFAULT_TRAINER_SETTINGS: FretboardTrainerSettings = {
   toFret: 12,
   accidentals: 'sharp',
   excludedStrings: [],
+  focusWeak: true,
 }
 
 function clampFret(value: unknown, fallback: number): number {
@@ -223,7 +256,8 @@ export function normalizeTrainerSettings(value: unknown): FretboardTrainerSettin
         ),
       ).sort((a, b) => a - b)
     : []
-  return { mode, fromFret: from, toFret, accidentals, excludedStrings }
+  const focusWeak = typeof v.focusWeak === 'boolean' ? v.focusWeak : DEFAULT_TRAINER_SETTINGS.focusWeak
+  return { mode, fromFret: from, toFret, accidentals, excludedStrings, focusWeak }
 }
 
 /**
@@ -246,9 +280,9 @@ export function createTrainerSettingsStore(
   return new Store<FretboardTrainerSettings>(
     {
       key: 'settings:fretboard-trainer',
-      // v2 added the 'findAll' quiz mode; the shape is otherwise unchanged, so
-      // old data just re-normalizes cleanly.
-      version: 2,
+      // v2 added the 'findAll' quiz mode; v3 added the 'focusWeak' toggle. The
+      // shape is otherwise unchanged, so old data just re-normalizes cleanly.
+      version: 3,
       defaultValue: DEFAULT_TRAINER_SETTINGS,
       migrate: (oldData) => normalizeTrainerSettings(oldData),
     },

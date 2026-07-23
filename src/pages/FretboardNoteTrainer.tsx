@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Fretboard, type FretboardMarker, type FretPosition } from '../components/Fretboard.tsx'
 import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
+import { NoteStatsPanel } from '../components/NoteStatsPanel.tsx'
 import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
 import { getAudioEngine } from '../lib/audio/index.ts'
 import { fretMidi } from '../lib/theory/instruments.ts'
@@ -30,6 +31,14 @@ import {
   type FindAllProgress,
   type QuizStats,
 } from '../lib/quiz.ts'
+import {
+  emptyNoteStats,
+  fretboardStatsStore,
+  normalizeNoteStats,
+  recordFindAllRound,
+  recordOutcome,
+  type NoteStatsData,
+} from '../lib/noteStats.ts'
 import {
   checkAnswer,
   findAllTargetKeys,
@@ -81,6 +90,15 @@ export function FretboardNoteTrainer() {
     trainerSettingsStore.set(settings)
   }, [settings])
 
+  const [noteStats, setNoteStats] = useState<NoteStatsData>(() =>
+    normalizeNoteStats(fretboardStatsStore.get()),
+  )
+  // Refs so the stable question generator reads the latest stats / toggle.
+  const statsRef = useRef(noteStats)
+  statsRef.current = noteStats
+  const focusWeakRef = useRef(settings.focusWeak)
+  focusWeakRef.current = settings.focusWeak
+
   const stringCount = tuning.strings.length
   const includedStrings = useMemo(
     () => resolveIncludedStrings(settings.excludedStrings, stringCount),
@@ -106,6 +124,13 @@ export function FretboardNoteTrainer() {
   const [faProgress, setFaProgress] = useState<FindAllProgress>(EMPTY_PROGRESS)
   const [faFound, setFaFound] = useState<readonly string[]>([])
   const [faWrong, setFaWrong] = useState<Position | null>(null)
+
+  // Weakest-first picking parameters, or `undefined` when the toggle is off.
+  // Reads refs so the (stable) generator always sees the current stats/toggle.
+  const picking = useCallback(
+    () => (focusWeakRef.current ? { stats: statsRef.current, now: Date.now() } : undefined),
+    [],
+  )
 
   const clearPendingAdvance = useCallback(() => {
     if (timeoutRef.current !== null) {
@@ -150,7 +175,7 @@ export function FretboardNoteTrainer() {
     if (settings.mode === 'findAll') {
       const session = new FindAllSession<FindAllQuestion, Position>({
         generate: (previous, rng) =>
-          generateQuestion(contextRef.current, previous, rng) as FindAllQuestion,
+          generateQuestion(contextRef.current, previous, rng, picking()) as FindAllQuestion,
         targetsOf: findAllTargetKeys,
         keyOf: (p) => positionKey(p.string, p.fret),
       })
@@ -165,7 +190,7 @@ export function FretboardNoteTrainer() {
       setResult(null)
     } else {
       const session = new QuizSession<TrainerQuestion, TrainerAnswer>({
-        generate: (previous, rng) => generateQuestion(contextRef.current, previous, rng),
+        generate: (previous, rng) => generateQuestion(contextRef.current, previous, rng, picking()),
         check: checkAnswer,
         clock: () => performance.now(),
       })
@@ -197,6 +222,11 @@ export function FretboardNoteTrainer() {
       const res = session.answer(answer)
       setResult(res)
       setStats(session.stats)
+      setNoteStats(
+        fretboardStatsStore.update((d) =>
+          recordOutcome(d, res.question.pc, res.correct, res.responseMs, Date.now()),
+        ),
+      )
 
       const engine = engineRef.current
       void engine.ensureRunning().then(() => engine.playNote(midiToPlay, 0.7))
@@ -231,6 +261,14 @@ export function FretboardNoteTrainer() {
         }, WRONG_FLASH_MS)
       }
       if (res.justCompleted) {
+        const q = session.current
+        if (q) {
+          setNoteStats(
+            fretboardStatsStore.update((d) =>
+              recordFindAllRound(d, [q.pc], q.pc, res.progress.mistakes, Date.now()),
+            ),
+          )
+        }
         clearPendingAdvance()
         timeoutRef.current = window.setTimeout(advance, ADVANCE_MS_CORRECT)
       }
@@ -266,6 +304,11 @@ export function FretboardNoteTrainer() {
   const findClickable = settings.mode === 'find' && !answered
   const findAllClickable = settings.mode === 'findAll' && !faProgress.complete
   const openStringName = (index: number): string => midiToName(fretMidi(tuning, index, 0), prefer)
+
+  const resetStats = useCallback(() => {
+    fretboardStatsStore.clear()
+    setNoteStats(emptyNoteStats())
+  }, [])
 
   const setFret = (which: 'fromFret' | 'toFret', value: number): void => {
     setSettings((s) => {
@@ -398,6 +441,20 @@ export function FretboardNoteTrainer() {
             })}
           </div>
         </div>
+
+        <div className="tool-control-group">
+          <span className="tool-control-label">Focus</span>
+          <div className="mn-segmented" role="group">
+            <button
+              type="button"
+              className={`mn-segment${settings.focusWeak ? ' mn-segment-active' : ''}`}
+              aria-pressed={settings.focusWeak}
+              onClick={() => setSettings((s) => ({ ...s, focusWeak: !s.focusWeak }))}
+            >
+              Focus weak notes
+            </button>
+          </div>
+        </div>
       </div>
 
       <InstrumentPicker value={tuning} onChange={(t) => setTuningId(t.id)} />
@@ -475,6 +532,8 @@ export function FretboardNoteTrainer() {
           <span className="fnt-score-label">Best streak</span>
         </div>
       </div>
+
+      <NoteStatsPanel stats={noteStats} prefer={prefer} onReset={resetStats} />
     </div>
   )
 }
