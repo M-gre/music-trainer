@@ -30,7 +30,9 @@ import type { Clef } from '../components/staffGeometry.ts'
 import { getAudioEngine } from '../lib/audio/index.ts'
 import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
 import { fretMidi } from '../lib/theory/instruments.ts'
-import { midiToName, midiToPc, SHARP_NAMES } from '../lib/theory/notes.ts'
+import { FLAT_NAMES, midiToName, midiToPc, SHARP_NAMES } from '../lib/theory/notes.ts'
+import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
+import { applySpellingPreference } from '../lib/globalSettings.ts'
 import {
   emptyStats,
   QuizSession,
@@ -77,8 +79,6 @@ const TO_FRET = 12
 const REVEAL_MS = 1200
 /** How often the Timed-mode countdown re-renders. */
 const TICK_MS = 150
-/** Notes are drawn with sharps; a key picker (flat spelling) is a follow-up. */
-const PREFER = 'sharp' as const
 
 type TimedPhase = 'setup' | 'running' | 'finished'
 
@@ -97,7 +97,15 @@ const RANGE_LABEL: Record<RangePreset, string> = {
 
 export function NoteReading() {
   const { tuning } = useInstrumentSettings()
+  const { settings: globalSettings } = useGlobalSettings()
   const engineRef = useRef(getAudioEngine())
+
+  // This tool draws a note on a staff with no key signature, so the accidental
+  // spelling is a genuinely free choice (there is no key context to contradict).
+  // Follow the global sharps/flats preference; `'auto'` keeps the original
+  // sharp spelling everywhere — staff, name buttons, and reveal markers.
+  const prefer = applySpellingPreference(globalSettings.spellingPreference, 'sharp')
+  const noteNames = prefer === 'flat' ? FLAT_NAMES : SHARP_NAMES
   const advanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownRef = useRef<Countdown | null>(null)
@@ -295,20 +303,20 @@ export function NoteReading() {
       for (let f = FROM_FRET; f <= TO_FRET; f++) {
         const midi = fretMidi(tuning, s, f)
         const isTarget = exactReachable ? midi === target : midiToPc(midi) === midiToPc(target)
-        if (isTarget) markers.push({ string: s, fret: f, variant: 'root', label: midiToName(midi, PREFER) })
+        if (isTarget) markers.push({ string: s, fret: f, variant: 'root', label: midiToName(midi, prefer) })
       }
     }
     return markers
-  }, [locked, question, tuning])
+  }, [locked, question, tuning, prefer])
 
   const keyMarkers = useMemo<KeyboardMarker[]>(
-    () => (locked && question ? [{ midi: question.midi, variant: 'root', label: midiToName(question.midi, PREFER) }] : []),
-    [locked, question],
+    () => (locked && question ? [{ midi: question.midi, variant: 'root', label: midiToName(question.midi, prefer) }] : []),
+    [locked, question, prefer],
   )
 
   const questionClef: Clef = question?.clef ?? (settings.clef === 'treble' ? 'treble' : 'bass')
   const keyboardRange = resolveRange(questionClef, settings.rangePreset, settings.customRange)
-  const answerName = question ? midiToName(question.midi, PREFER) : ''
+  const answerName = question ? midiToName(question.midi, prefer) : ''
   const controlsLocked = settings.mode === 'timed' && timedPhase === 'running'
 
   const setClef = (clef: ClefSetting) => setSettings((s) => ({ ...s, clef }))
@@ -338,7 +346,7 @@ export function NoteReading() {
     [submit],
   )
   useAnswerShortcuts({
-    optionCount: nameInputActive ? SHARP_NAMES.length : 0,
+    optionCount: nameInputActive ? noteNames.length : 0,
     onSelect: selectNote,
   })
 
@@ -529,7 +537,7 @@ export function NoteReading() {
           )}
 
           <div className={`nr-stage nr-stage-${locked ? (result?.correct ? 'correct' : 'wrong') : 'idle'}`}>
-            <Staff midi={question.midi} clef={questionClef} prefer={PREFER} className="nr-staff" />
+            <Staff midi={question.midi} clef={questionClef} prefer={prefer} className="nr-staff" />
             <div className="nr-feedback" role="status" aria-live="polite">
               {!locked && <span className="nr-prompt">Name this note</span>}
               {locked && result?.correct && <span className="nr-correct">Correct — {answerName}</span>}
@@ -559,7 +567,7 @@ export function NoteReading() {
           <div className="nr-answer">
             {settings.inputMode === 'name' && (
               <div className="nr-names" role="group" aria-label="Note names">
-                {SHARP_NAMES.map((name, pc) => {
+                {noteNames.map((name, pc) => {
                   const key = shortcutLabel(pc)
                   return (
                     <button
@@ -588,7 +596,7 @@ export function NoteReading() {
                 fromFret={FROM_FRET}
                 toFret={TO_FRET}
                 markers={fretMarkers}
-                prefer={PREFER}
+                prefer={prefer}
                 onFretClick={locked ? undefined : (pos) => submit({ kind: 'fretboard', midi: pos.midi })}
                 ariaLabel={`${tuning.name} — click the fret of the note`}
               />
@@ -599,7 +607,7 @@ export function NoteReading() {
                 from={keyboardRange.low}
                 to={keyboardRange.high}
                 markers={keyMarkers}
-                prefer={PREFER}
+                prefer={prefer}
                 showLabels="c"
                 onKeyClick={locked ? undefined : ({ midi }) => submit({ kind: 'keyboard', midi })}
                 ariaLabel="Click the key of the note"

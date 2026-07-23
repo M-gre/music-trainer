@@ -27,6 +27,8 @@ import {
   type TheoryQuizSettings,
 } from '../lib/theoryQuiz.ts'
 import { normalizeSrsData, qualityFromOutcome, reviewKey, type SrsData } from '../lib/spacedRepetition.ts'
+import { useGlobalSettings } from '../hooks/useGlobalSettings.ts'
+import { applySpellingPreference } from '../lib/globalSettings.ts'
 import { recordPractice } from '../lib/practiceLog.ts'
 import { useAnswerShortcuts } from '../hooks/useAnswerShortcuts.ts'
 import { shortcutLabel } from '../lib/answerShortcuts.ts'
@@ -61,6 +63,17 @@ export function TheoryQuiz() {
   const srsRef = useRef(srs)
   srsRef.current = srs
 
+  // A forced global sharps/flats preference fixes note-to-note interval
+  // spelling; `'auto'` leaves it a per-question coin flip. Read via a ref so
+  // the (stable) generator always sees the current preference.
+  const { settings: globalSettings } = useGlobalSettings()
+  const preferOverride =
+    globalSettings.spellingPreference === 'auto'
+      ? undefined
+      : applySpellingPreference(globalSettings.spellingPreference, 'sharp')
+  const preferOverrideRef = useRef(preferOverride)
+  preferOverrideRef.current = preferOverride
+
   const clearPendingAdvance = useCallback(() => {
     if (timeoutRef.current !== null) {
       window.clearTimeout(timeoutRef.current)
@@ -82,7 +95,13 @@ export function TheoryQuiz() {
     clearPendingAdvance()
     const session = new QuizSession<TheoryQuizQuestion, string>({
       generate: (previous, rng) =>
-        generateQuestion(categories, previous, rng, { srs: srsRef.current, now: Date.now() }),
+        generateQuestion(
+          categories,
+          previous,
+          rng,
+          { srs: srsRef.current, now: Date.now() },
+          preferOverrideRef.current,
+        ),
       check: checkAnswer,
       clock: () => performance.now(),
     })

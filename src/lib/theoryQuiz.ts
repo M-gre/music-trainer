@@ -313,7 +313,7 @@ function intervalNoteToNoteQuestionFrom(
   }
 }
 
-function generateIntervalQuestion(rng: Rng): TheoryQuizQuestion {
+function generateIntervalQuestion(rng: Rng, preferOverride?: 'sharp' | 'flat'): TheoryQuizQuestion {
   const askSemitones = rng() < 0.5
 
   if (askSemitones) {
@@ -326,7 +326,10 @@ function generateIntervalQuestion(rng: Rng): TheoryQuizQuestion {
   // ascending) so it always matches one of the app's defined interval names.
   const rootLetter: Letter = LETTERS[randomIndex(LETTERS.length, rng)]!
   const distance = 1 + randomIndex(11, rng) // 1..11
-  const prefer = rng() < 0.5 ? 'sharp' : 'flat'
+  // A forced global sharps/flats preference fixes the target's spelling; with
+  // no override it stays a per-question coin flip (the original behaviour). The
+  // `??` short-circuit keeps the rng stream identical when there is no override.
+  const prefer = preferOverride ?? (rng() < 0.5 ? 'sharp' : 'flat')
   return intervalNoteToNoteQuestionFrom(rootLetter, distance, prefer, rng)
 }
 
@@ -335,25 +338,33 @@ function generateIntervalQuestion(rng: Rng): TheoryQuizQuestion {
  * asked either way (semitone count or note-to-note); the unison (0) and octave
  * (12) only make sense as a count, so they always use the count form.
  */
-function intervalQuestionForSemitones(semitones: number, rng: Rng): TheoryQuizQuestion {
+function intervalQuestionForSemitones(
+  semitones: number,
+  rng: Rng,
+  preferOverride?: 'sharp' | 'flat',
+): TheoryQuizQuestion {
   const canNoteToNote = semitones >= 1 && semitones <= 11
   const askSemitones = canNoteToNote ? rng() < 0.5 : true
   if (askSemitones) return intervalSemitonesQuestionFrom(semitones, rng)
   const rootLetter: Letter = LETTERS[randomIndex(LETTERS.length, rng)]!
-  const prefer = rng() < 0.5 ? 'sharp' : 'flat'
+  const prefer = preferOverride ?? (rng() < 0.5 ? 'sharp' : 'flat')
   return intervalNoteToNoteQuestionFrom(rootLetter, semitones, prefer, rng)
 }
 
 // --- Dispatch ----------------------------------------------------------
 
-function generateForCategory(category: QuizCategory, rng: Rng): TheoryQuizQuestion {
+function generateForCategory(
+  category: QuizCategory,
+  rng: Rng,
+  preferOverride?: 'sharp' | 'flat',
+): TheoryQuizQuestion {
   switch (category) {
     case 'keySignature':
       return generateKeySignatureQuestion(rng)
     case 'diatonicChord':
       return generateDiatonicChordQuestion(rng)
     case 'interval':
-      return generateIntervalQuestion(rng)
+      return generateIntervalQuestion(rng, preferOverride)
   }
 }
 
@@ -414,14 +425,18 @@ function enumerateFacts(categories: readonly QuizCategory[]): QuizFact[] {
 }
 
 /** Turn a chosen fact into a concrete question (randomizing its direction). */
-function generateForFact(fact: QuizFact, rng: Rng): TheoryQuizQuestion {
+function generateForFact(
+  fact: QuizFact,
+  rng: Rng,
+  preferOverride?: 'sharp' | 'flat',
+): TheoryQuizQuestion {
   switch (fact.category) {
     case 'keySignature':
       return keySignatureQuestionForKey(fact.keyIndex, rng)
     case 'diatonicChord':
       return diatonicChordQuestionForKeyDegree(fact.keyIndex, fact.degreeIndex, rng)
     case 'interval':
-      return intervalQuestionForSemitones(fact.semitones, rng)
+      return intervalQuestionForSemitones(fact.semitones, rng, preferOverride)
   }
 }
 
@@ -444,12 +459,19 @@ export interface TheoryQuizPicking {
  * Without `picking`, categories are chosen uniformly (original behaviour).
  * With `picking`, the underlying fact is chosen with a spaced-repetition bias
  * (see `TheoryQuizPicking`).
+ *
+ * `preferOverride` fixes the accidental of note-to-note interval questions
+ * (e.g. "C to Eb" vs "C to D#") to honor the global sharps/flats preference;
+ * omit it (the `'auto'` case) to keep the original per-question coin flip. It
+ * only affects that one free spelling — key-signature and diatonic-chord names
+ * stay tied to their key.
  */
 export function generateQuestion(
   categories: readonly QuizCategory[],
   previous: TheoryQuizQuestion | null,
   rng: Rng,
   picking?: TheoryQuizPicking,
+  preferOverride?: 'sharp' | 'flat',
 ): TheoryQuizQuestion {
   if (categories.length === 0) throw new Error('generateQuestion: no categories enabled')
 
@@ -458,7 +480,7 @@ export function generateQuestion(
     let candidate: TheoryQuizQuestion | null = null
     for (let attempt = 0; attempt < MAX_REPEAT_ATTEMPTS; attempt++) {
       const fact = pickWeighted(facts, (f) => srsWeight(picking.srs[factKey(f)], picking.now), rng)
-      candidate = generateForFact(fact, rng)
+      candidate = generateForFact(fact, rng, preferOverride)
       if (!previous || candidate.prompt !== previous.prompt) return candidate
     }
     return candidate!
@@ -467,7 +489,7 @@ export function generateQuestion(
   let candidate: TheoryQuizQuestion | null = null
   for (let attempt = 0; attempt < MAX_REPEAT_ATTEMPTS; attempt++) {
     const category = categories[randomIndex(categories.length, rng)]!
-    candidate = generateForCategory(category, rng)
+    candidate = generateForCategory(category, rng, preferOverride)
     if (!previous || candidate.prompt !== previous.prompt) return candidate
   }
   return candidate!

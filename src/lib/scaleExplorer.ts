@@ -124,8 +124,19 @@ export function markerVariantForInterval(interval: number): MarkerVariant {
  * Spelled note names of the scale for the info line. 7-note scales use
  * consecutive-letter spelling (F major = F G A Bb C D E); others fall back to
  * simple names in the root's conventional accidental direction.
+ *
+ * When `forcedPrefer` is supplied (the user set a global sharps/flats
+ * preference), every note is spelled with that accidental via `pcToName`
+ * instead — so the info line stays consistent with the fretboard/keyboard
+ * markers, which honor the same forced preference. Omit it (the `'auto'`
+ * case) to keep the context-correct spelling above.
  */
-export function scaleNoteNames(rootPc: PitchClass, scale: Scale): string[] {
+export function scaleNoteNames(
+  rootPc: PitchClass,
+  scale: Scale,
+  forcedPrefer?: AccidentalPreference,
+): string[] {
+  if (forcedPrefer) return scale.intervals.map((i) => pcToName(mod12(rootPc + i), forcedPrefer))
   if (scale.intervals.length === 7) return spellScale(rootPc, scale.intervals)
   const prefer: AccidentalPreference = prefersFlats(rootPc) ? 'flat' : 'sharp'
   return scale.intervals.map((i) => pcToName(mod12(rootPc + i), prefer))

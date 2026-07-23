@@ -145,6 +145,41 @@ describe('scaleNoteNames', () => {
   it('names a non-7-note scale with flats for a flat-side root (F minor pentatonic)', () => {
     expect(scaleNoteNames(5, getScale('minor-pentatonic'))).toEqual(['F', 'Ab', 'Bb', 'C', 'Eb'])
   })
+
+  it('forces sharp spelling for every note when a preference is given (F major)', () => {
+    expect(scaleNoteNames(5, getScale('major'), 'sharp')).toEqual([
+      'F',
+      'G',
+      'A',
+      'A#',
+      'C',
+      'D',
+      'E',
+    ])
+  })
+
+  it('forces flat spelling for every note when a preference is given (C major)', () => {
+    expect(scaleNoteNames(0, getScale('major'), 'flat')).toEqual([
+      'C',
+      'D',
+      'E',
+      'F',
+      'G',
+      'A',
+      'B',
+    ])
+  })
+
+  it('overrides the context choice for a non-7-note scale (C blues, forced flats)', () => {
+    expect(scaleNoteNames(0, getScale('blues'), 'flat')).toEqual([
+      'C',
+      'Eb',
+      'F',
+      'Gb',
+      'G',
+      'Bb',
+    ])
+  })
 })
 
 describe('buildFretboardMarkers', () => {
