@@ -1004,6 +1004,212 @@ a.tool-card:hover {
   border-color: #b8433a;
 }
 
+/* ---- Play-Along: chord accompaniment ---- */
+
+.pa-accomp {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
+.pa-accomp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pa-accomp-hint {
+  margin-top: -0.75rem;
+  text-align: left;
+}
+
+/* Large current-chord readout with a next-chord preview. */
+.pa-chord-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1.25rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-height: 5.5rem;
+  justify-content: center;
+}
+
+.pa-chord-symbol {
+  font-size: 2.8rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.pa-chord-next {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pa-chord-error {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.pa-prog-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+.pa-prog-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: color 60ms ease, border-color 60ms ease, background 60ms ease;
+}
+
+.pa-prog-chip-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pa-key-group,
+.pa-prog-group {
+  flex: 1 1 18rem;
+}
+
+.pa-accomp-options {
+  flex: 1 1 12rem;
+}
+
+.pa-key-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.4rem;
+}
+
+.pa-key {
+  min-height: 44px;
+  padding: 0.5rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+  transition: border-color 60ms ease, background 60ms ease;
+}
+
+.pa-key:hover {
+  border-color: var(--accent-dim);
+}
+
+.pa-key-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* A selected progression chip reuses the mute-chip look with an accent fill. */
+.pa-chip-selected {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pa-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.pa-custom-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  touch-action: manipulation;
+}
+
+.pa-custom-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pa-custom-input-error {
+  border-color: #b8433a;
+}
+
+.pa-seg {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.pa-seg-btn {
+  min-width: 3rem;
+  min-height: 44px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+  transition: border-color 60ms ease, background 60ms ease;
+}
+
+.pa-seg-btn:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+}
+
+.pa-seg-btn-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pa-seg-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pa-seg-note {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}
+
+.pa-style-label {
+  margin-top: 0.75rem;
+}
+
 /* ---- Fretboard Note Trainer ---- */
 
 .fnt-prompt {

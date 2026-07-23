@@ -8,6 +8,11 @@
  */
 
 import {
+  DEFAULT_ACCOMPANIMENT_SETTINGS,
+  normalizeAccompanimentSettings,
+  type AccompanimentSettings,
+} from './accompaniment.ts'
+import {
   DEFAULT_GROOVE,
   DEFAULT_MASTER_VOLUME,
   DRUM_VOICES,
@@ -30,6 +35,8 @@ export interface PlayAlongSettings {
   masterVolume: number
   /** Voices the user has muted, in `DRUM_VOICES` order (deduped, validated). */
   mutedVoices: DrumVoice[]
+  /** Chord-progression accompaniment (comping voice) settings. */
+  accompaniment: AccompanimentSettings
 }
 
 /** Tempo range offered by the Play-Along slider/steppers. */
@@ -82,6 +89,7 @@ export const DEFAULT_PLAY_ALONG_SETTINGS: PlayAlongSettings = {
   countIn: true,
   masterVolume: DEFAULT_MASTER_VOLUME,
   mutedVoices: [],
+  accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
 }
 
 /**
@@ -105,6 +113,7 @@ export function normalizePlayAlongSettings(value: unknown): PlayAlongSettings {
         ? clampVolume(v.masterVolume)
         : DEFAULT_PLAY_ALONG_SETTINGS.masterVolume,
     mutedVoices: normalizeMutedVoices(v.mutedVoices),
+    accompaniment: normalizeAccompanimentSettings(v.accompaniment),
   }
 }
 
@@ -116,8 +125,12 @@ export function createPlayAlongSettingsStore(backend?: StorageBackend): Store<Pl
   return new Store<PlayAlongSettings>(
     {
       key: 'settings:play-along',
-      version: 1,
+      // v2 added the chord-progression accompaniment block.
+      version: 2,
       defaultValue: DEFAULT_PLAY_ALONG_SETTINGS,
+      // Older data lacks `accompaniment`; normalizing fills it (and every other
+      // field) from the defaults, so a v1 -> v2 upgrade never loses drum prefs.
+      migrate: (oldData) => normalizePlayAlongSettings(oldData),
     },
     backend,
   )
