@@ -2837,6 +2837,30 @@ a.tool-card:hover {
   color: var(--text-dim);
 }
 
+.dx-permutation-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dx-select {
+  min-height: 44px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.dx-select:hover {
+  border-color: var(--accent-dim);
+}
+
 .dx-instrument {
   margin: 0;
 }
