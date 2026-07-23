@@ -5,6 +5,7 @@ import { Metronome } from './pages/Metronome.tsx'
 import { FretboardNoteTrainer } from './pages/FretboardNoteTrainer.tsx'
 import { KeyboardNoteTrainer } from './pages/KeyboardNoteTrainer.tsx'
 import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
+import { DiatonicChords } from './pages/DiatonicChords.tsx'
 import { NoteReading } from './pages/NoteReading.tsx'
 import { ScalesExplorer } from './pages/ScalesExplorer.tsx'
 import { ChordExplorer } from './pages/ChordExplorer.tsx'
@@ -59,6 +60,13 @@ export const TOOLS: Tool[] = [
     description: 'Interactive circle with key signatures and relative keys.',
     tags: ['theory'],
     page: () => <CircleOfFifths />,
+  },
+  {
+    route: '/diatonic-chords',
+    title: 'Diatonic Chords',
+    description: 'Every chord that lives in a key, with roman numerals.',
+    tags: ['theory', 'piano', 'bass', 'guitar'],
+    page: () => <DiatonicChords />,
   },
   {
     route: '/note-reading',
