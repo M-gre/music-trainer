@@ -29,7 +29,7 @@ When adding ideas, add them as unchecked items in the right milestone.
 
 - [ ] Scales & Modes explorer: pick root + scale, see it on fretboard AND keyboard with degrees/intervals, play ascending/descending audio
 - [ ] Chord Explorer: pick root + quality, tones shown on both instruments, arpeggio playback, inversions on keyboard
-- [ ] Circle of Fifths: interactive SVG circle — key signatures, relative minors, click a key to see its scale and diatonic chords
+- [x] Circle of Fifths: interactive SVG circle — key signatures, relative minors, click a key to see its scale and diatonic chords
 - [ ] Diatonic chords view: for a key, show I–vii° with numerals, play them
 - [ ] Theory quiz: key signatures, "which chord is the V of X", interval naming
 

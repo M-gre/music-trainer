@@ -559,3 +559,224 @@ a.tool-card:hover {
 .mn-tap:active {
   background: var(--bg-hover);
 }
+
+/* ---- Circle of Fifths ---- */
+
+.cf-circle-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+.cf-svg {
+  display: block;
+  width: 100%;
+  max-width: 26rem;
+  height: auto;
+  user-select: none;
+  font-family: inherit;
+}
+
+.cf-hub {
+  fill: var(--bg-raised);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.cf-segment {
+  fill: var(--bg-raised);
+  stroke: var(--bg);
+  stroke-width: 2;
+  cursor: pointer;
+  transition: fill 120ms ease;
+}
+
+.cf-segment-minor {
+  fill: var(--bg);
+}
+
+.cf-segment:hover {
+  fill: var(--bg-hover);
+}
+
+.cf-segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.cf-segment-selected,
+.cf-segment-selected:hover {
+  fill: var(--accent-dim);
+}
+
+.cf-label {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.cf-label-minor {
+  fill: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cf-signature {
+  fill: var(--text-dim);
+  font-size: 9px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.cf-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+}
+
+.cf-detail-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+
+.cf-detail-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.cf-detail-relative {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.cf-detail-signature {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.cf-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cf-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cf-detail-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+.cf-scale-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.cf-note-chip {
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cf-note-chip-root {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cf-triads {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.6rem;
+}
+
+.cf-triad-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+}
+
+.cf-triad-numeral {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.cf-triad-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.cf-play-button {
+  min-height: 2.5rem;
+  padding: 0.4rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cf-play-button:hover {
+  background: #f0b25a;
+}
+
+.cf-play-button:active {
+  background: var(--accent-dim);
+}
+
+.cf-play-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cf-play-button-small {
+  align-self: stretch;
+  min-height: 2rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 480px) {
+  .cf-label {
+    font-size: 12px;
+  }
+  .cf-label-minor {
+    font-size: 10px;
+  }
+  .cf-signature {
+    font-size: 8px;
+  }
+}

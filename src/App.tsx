@@ -2,6 +2,7 @@ import { useHashRoute } from './router.ts'
 import { Home } from './pages/Home.tsx'
 import { NotFound } from './pages/NotFound.tsx'
 import { Metronome } from './pages/Metronome.tsx'
+import { CircleOfFifths } from './pages/CircleOfFifths.tsx'
 
 export interface Tool {
   route: string
@@ -47,6 +48,7 @@ export const TOOLS: Tool[] = [
     title: 'Circle of Fifths',
     description: 'Interactive circle with key signatures and relative keys.',
     tags: ['theory'],
+    page: () => <CircleOfFifths />,
   },
   {
     route: '/note-reading',
