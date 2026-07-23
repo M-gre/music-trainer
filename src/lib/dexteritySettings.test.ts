@@ -31,6 +31,18 @@ describe('clampFret', () => {
   })
 })
 
+/** The v6 piano fields, all at their defaults — spread into pre-v6 expectations. */
+const pianoDefaults = {
+  pianoMode: DEFAULT_DEXTERITY_SETTINGS.pianoMode,
+  pianoKind: DEFAULT_DEXTERITY_SETTINGS.pianoKind,
+  pianoRootPc: DEFAULT_DEXTERITY_SETTINGS.pianoRootPc,
+  pianoOctave: DEFAULT_DEXTERITY_SETTINGS.pianoOctave,
+  pianoQuality: DEFAULT_DEXTERITY_SETTINGS.pianoQuality,
+  pianoPatternId: DEFAULT_DEXTERITY_SETTINGS.pianoPatternId,
+  pianoHand: DEFAULT_DEXTERITY_SETTINGS.pianoHand,
+  pianoOctaves: DEFAULT_DEXTERITY_SETTINGS.pianoOctaves,
+}
+
 describe('normalizeDexteritySettings', () => {
   it('passes through a valid value', () => {
     const value = {
@@ -50,8 +62,40 @@ describe('normalizeDexteritySettings', () => {
       advanceMin: 3,
       advanceMax: 9,
       direction: 'reverse',
+      pianoMode: true,
+      pianoKind: 'scale',
+      pianoRootPc: 6,
+      pianoOctave: 3,
+      pianoQuality: 'minor',
+      pianoPatternId: 'broken-thirds',
+      pianoHand: 'left',
+      pianoOctaves: 2,
     }
     expect(normalizeDexteritySettings(value)).toEqual(value)
+  })
+
+  it('fills piano fields with defaults and validates/wraps them', () => {
+    // v5 (no piano fields) → all piano defaults.
+    const filled = normalizeDexteritySettings({ mode: 'pattern' })
+    expect(filled.pianoMode).toBe(false)
+    expect(filled.pianoKind).toBe(DEFAULT_DEXTERITY_SETTINGS.pianoKind)
+    expect(filled.pianoHand).toBe('right')
+    // Bad values fall back; a root pc wraps into 0–11; octave clamps.
+    expect(normalizeDexteritySettings({ pianoKind: 'bogus' }).pianoKind).toBe(DEFAULT_DEXTERITY_SETTINGS.pianoKind)
+    expect(normalizeDexteritySettings({ pianoQuality: 'diminished' }).pianoQuality).toBe('major')
+    expect(normalizeDexteritySettings({ pianoPatternId: 'nope' }).pianoPatternId).toBe(
+      DEFAULT_DEXTERITY_SETTINGS.pianoPatternId,
+    )
+    expect(normalizeDexteritySettings({ pianoHand: 'middle' }).pianoHand).toBe('right')
+    expect(normalizeDexteritySettings({ pianoOctaves: 3 }).pianoOctaves).toBe(1)
+    expect(normalizeDexteritySettings({ pianoRootPc: 14 }).pianoRootPc).toBe(2)
+    expect(normalizeDexteritySettings({ pianoOctave: 99 }).pianoOctave).toBe(6)
+    // Valid values pass through.
+    expect(normalizeDexteritySettings({ pianoMode: true, pianoKind: 'scale', pianoHand: 'left' })).toMatchObject({
+      pianoMode: true,
+      pianoKind: 'scale',
+      pianoHand: 'left',
+    })
   })
 
   it('rejects an unknown scale id, sequence id, and mode', () => {
@@ -156,6 +200,7 @@ describe('migrateDexteritySettings', () => {
     }
     expect(migrateDexteritySettings(v1Data)).toEqual({
       ...commonV5Fields,
+      ...pianoDefaults,
       direction: DEFAULT_DEXTERITY_SETTINGS.direction,
       mode: DEFAULT_DEXTERITY_SETTINGS.mode,
       scaleRootPc: DEFAULT_DEXTERITY_SETTINGS.scaleRootPc,
@@ -180,6 +225,7 @@ describe('migrateDexteritySettings', () => {
     }
     expect(migrateDexteritySettings(v2Data)).toEqual({
       ...commonV5Fields,
+      ...pianoDefaults,
       direction: 'reverse',
       mode: DEFAULT_DEXTERITY_SETTINGS.mode,
       scaleRootPc: DEFAULT_DEXTERITY_SETTINGS.scaleRootPc,
@@ -208,6 +254,7 @@ describe('migrateDexteritySettings', () => {
     }
     expect(migrateDexteritySettings(v3Data)).toEqual({
       ...commonV5Fields,
+      ...pianoDefaults,
       mode: 'scale',
       scaleRootPc: 3,
       scaleId: 'dorian',
@@ -243,7 +290,7 @@ describe('migrateDexteritySettings', () => {
     expect('notesPerBeat' in migrated).toBe(false)
   })
 
-  it('a v4-tagged envelope in the store is transparently upgraded to v5', () => {
+  it('a v4-tagged envelope in the store is transparently upgraded to v6', () => {
     const backend = memoryBackend()
     const v4Data = { ...DEFAULT_DEXTERITY_SETTINGS, bpm: 140, notesPerBeat: 4 } as Partial<DexteritySettings> & {
       notesPerBeat?: number
@@ -260,7 +307,26 @@ describe('migrateDexteritySettings', () => {
 
     // The migration also persists the upgraded shape.
     const rawAfter = JSON.parse(backend.getItem('mt:settings:dexterity')!) as { v: number }
-    expect(rawAfter.v).toBe(5)
+    expect(rawAfter.v).toBe(6)
+  })
+
+  it('a v5-tagged envelope (no piano fields) upgrades to v6 with piano defaults', () => {
+    const backend = memoryBackend()
+    const v5Data = { ...DEFAULT_DEXTERITY_SETTINGS, bpm: 120 } as Partial<DexteritySettings>
+    delete v5Data.pianoMode
+    delete v5Data.pianoKind
+    delete v5Data.pianoHand
+    backend.setItem('mt:settings:dexterity', JSON.stringify({ v: 5, data: v5Data }))
+
+    const store = createDexteritySettingsStore(backend)
+    const loaded = store.get()
+    expect(loaded.pianoMode).toBe(false)
+    expect(loaded.pianoKind).toBe(DEFAULT_DEXTERITY_SETTINGS.pianoKind)
+    expect(loaded.pianoHand).toBe('right')
+    expect(loaded.bpm).toBe(120)
+
+    const rawAfter = JSON.parse(backend.getItem('mt:settings:dexterity')!) as { v: number }
+    expect(rawAfter.v).toBe(6)
   })
 })
 

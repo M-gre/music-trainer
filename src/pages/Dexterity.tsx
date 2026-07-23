@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Fretboard, type FretboardMarker, type MarkerVariant } from '../components/Fretboard.tsx'
+import { Keyboard, type KeyboardMarker } from '../components/Keyboard.tsx'
 import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
 import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
 import {
@@ -67,6 +68,27 @@ import {
   rhythmTiming,
   type RhythmId,
 } from '../lib/rhythmVariations.ts'
+import {
+  applyPianoDirection,
+  buildFiveFinger,
+  buildScale,
+  clampPianoOctave,
+  FIVE_FINGER_PATTERNS,
+  FIVE_FINGER_QUALITIES,
+  type FiveFingerPatternId,
+  type FiveFingerQuality,
+  getFiveFingerPattern,
+  type Hand,
+  HANDS,
+  MAX_PIANO_OCTAVE,
+  MIN_PIANO_OCTAVE,
+  type PianoExerciseKind,
+  PIANO_EXERCISE_KINDS,
+  type PianoStep,
+  rootMidi,
+  SCALE_OCTAVE_OPTIONS,
+  type ScaleOctaves,
+} from '../lib/pianoExercises.ts'
 import { midiToName, pcToName, type PitchClass } from '../lib/theory/notes.ts'
 import { getScale, SCALES } from '../lib/theory/scales.ts'
 import {
@@ -121,6 +143,20 @@ const DIRECTION_LABELS: Record<Direction, string> = {
   forward: 'Forward',
   reverse: 'Reverse',
   'forward-reverse': 'Forward + Reverse',
+}
+
+const HAND_LABELS: Record<Hand, string> = { right: 'Right', left: 'Left' }
+const QUALITY_LABELS: Record<FiveFingerQuality, string> = { major: 'Major', minor: 'Minor' }
+
+/**
+ * Adapt piano steps to the fretted `ExerciseStep` shape the rhythm layer and
+ * scheduler consume. Only the midi is meaningful for playback; the board fields
+ * are placeholders (piano mode renders the `Keyboard`, not the fretboard, and
+ * reads finger/hand from the `PianoStep`s directly). Keeping the same array
+ * length + order as the display steps keeps the active-step index aligned.
+ */
+function pianoStepsAsExercise(steps: readonly PianoStep[]): ExerciseStep[] {
+  return steps.map((s) => ({ string: 0, fret: 0, finger: 1, duration: 1, midi: s.midi }))
 }
 
 /**
@@ -211,6 +247,18 @@ export function Dexterity() {
   const [direction, setDirection] = useState<Direction>(settings.direction)
   const [clickOn, setClickOn] = useState(true)
 
+  // Piano (keyboard) mode — a page-local instrument context alongside the
+  // fretted instrument picker. When on, the catalog/board/player switch to the
+  // piano exercises and the fret-based settings hide.
+  const [pianoMode, setPianoMode] = useState(settings.pianoMode)
+  const [pianoKind, setPianoKind] = useState<PianoExerciseKind>(settings.pianoKind)
+  const [pianoRootPc, setPianoRootPc] = useState<PitchClass>(settings.pianoRootPc)
+  const [pianoOctave, setPianoOctave] = useState(settings.pianoOctave)
+  const [pianoQuality, setPianoQuality] = useState<FiveFingerQuality>(settings.pianoQuality)
+  const [pianoPatternId, setPianoPatternId] = useState<FiveFingerPatternId>(settings.pianoPatternId)
+  const [pianoHand, setPianoHand] = useState<Hand>(settings.pianoHand)
+  const [pianoOctaves, setPianoOctaves] = useState<ScaleOctaves>(settings.pianoOctaves)
+
   const [running, setRunning] = useState(false)
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null)
   const [activeLoop, setActiveLoop] = useState(0)
@@ -286,12 +334,41 @@ export function Dexterity() {
     return applyDirection(raw, direction)
   }, [mode, pattern, tuning, scaleRootPc, scale, sequenceId, arpRootPc, arpQuality, arpInversion, displayPosition, direction])
 
+  // Piano steps, ascending, then with the playback direction applied — the
+  // keyboard analog of `displaySteps`. `fiveFinger` also stores the chosen
+  // pattern def for the description panel.
+  const fiveFingerDef = useMemo(() => getFiveFingerPattern(pianoPatternId), [pianoPatternId])
+  const pianoAscending = useMemo(() => {
+    if (pianoKind === 'scale') {
+      return buildScale({ root: pianoRootPc, octave: pianoOctave, octaves: pianoOctaves, hand: pianoHand })
+    }
+    return buildFiveFinger({
+      root: pianoRootPc,
+      octave: pianoOctave,
+      quality: pianoQuality,
+      patternId: pianoPatternId,
+      hand: pianoHand,
+    })
+  }, [pianoKind, pianoRootPc, pianoOctave, pianoOctaves, pianoHand, pianoQuality, pianoPatternId])
+  const displayPianoSteps = useMemo(
+    () => applyPianoDirection(pianoAscending, direction),
+    [pianoAscending, direction],
+  )
+
+  // The step sequence the rhythm layer + scheduler operate on: the piano steps
+  // (adapted to the fretted step shape) in piano mode, else the fretted steps.
+  // Same length/order as the mode's display steps, so the active index aligns.
+  const activeSteps = useMemo(
+    () => (pianoMode ? pianoStepsAsExercise(displayPianoSteps) : displaySteps),
+    [pianoMode, displayPianoSteps, displaySteps],
+  )
+
   // Lay the steps onto the chosen rhythm, then apply the accent layer. The
   // rhythmized events drive the strip's accent emphasis; their grid timing (at
   // the fine RHYTHM_RESOLUTION) is shared by the rAF indicator and the audio
   // callback. Step count is independent of the position, so this is valid for
   // every loop.
-  const rhythmized = useMemo(() => rhythmizeSteps(displaySteps, rhythm), [displaySteps, rhythm])
+  const rhythmized = useMemo(() => rhythmizeSteps(activeSteps, rhythm), [activeSteps, rhythm])
   const displayEvents = useMemo(
     () => applyAccent(rhythmized.events, accentEveryN),
     [rhythmized, accentEveryN],
@@ -318,6 +395,14 @@ export function Dexterity() {
   const arpRootPcRef = useRef(arpRootPc)
   const arpQualityRef = useRef(arpQuality)
   const arpInversionRef = useRef(arpInversion)
+  const pianoModeRef = useRef(pianoMode)
+  const pianoKindRef = useRef(pianoKind)
+  const pianoRootPcRef = useRef(pianoRootPc)
+  const pianoOctaveRef = useRef(pianoOctave)
+  const pianoQualityRef = useRef(pianoQuality)
+  const pianoPatternIdRef = useRef(pianoPatternId)
+  const pianoHandRef = useRef(pianoHand)
+  const pianoOctavesRef = useRef(pianoOctaves)
   patternRef.current = pattern
   tuningRef.current = tuning
   positionRef.current = position
@@ -334,6 +419,14 @@ export function Dexterity() {
   arpRootPcRef.current = arpRootPc
   arpQualityRef.current = arpQuality
   arpInversionRef.current = arpInversion
+  pianoModeRef.current = pianoMode
+  pianoKindRef.current = pianoKind
+  pianoRootPcRef.current = pianoRootPc
+  pianoOctaveRef.current = pianoOctave
+  pianoQualityRef.current = pianoQuality
+  pianoPatternIdRef.current = pianoPatternId
+  pianoHandRef.current = pianoHand
+  pianoOctavesRef.current = pianoOctaves
 
   // Persist preferences whenever they change.
   useEffect(() => {
@@ -354,6 +447,14 @@ export function Dexterity() {
       advanceMin,
       advanceMax,
       direction,
+      pianoMode,
+      pianoKind,
+      pianoRootPc,
+      pianoOctave,
+      pianoQuality,
+      pianoPatternId,
+      pianoHand,
+      pianoOctaves,
     })
   }, [
     mode,
@@ -372,6 +473,14 @@ export function Dexterity() {
     advanceMin,
     advanceMax,
     direction,
+    pianoMode,
+    pianoKind,
+    pianoRootPc,
+    pianoOctave,
+    pianoQuality,
+    pianoPatternId,
+    pianoHand,
+    pianoOctaves,
   ])
 
   // Apply tempo changes to a live scheduler without stopping it. The grid runs
@@ -392,6 +501,26 @@ export function Dexterity() {
     // on the active mode — a built-in pattern or a scale-sequence drill. Reads
     // everything from refs so the callback identity stays stable.
     const buildSteps = (pos: number): ExerciseStep[] => {
+      // Piano mode ignores the fret position: build the keyboard steps from the
+      // piano refs, apply the shared direction, and adapt to the step shape.
+      if (pianoModeRef.current) {
+        const ascending =
+          pianoKindRef.current === 'scale'
+            ? buildScale({
+                root: pianoRootPcRef.current,
+                octave: pianoOctaveRef.current,
+                octaves: pianoOctavesRef.current,
+                hand: pianoHandRef.current,
+              })
+            : buildFiveFinger({
+                root: pianoRootPcRef.current,
+                octave: pianoOctaveRef.current,
+                quality: pianoQualityRef.current,
+                patternId: pianoPatternIdRef.current,
+                hand: pianoHandRef.current,
+              })
+        return pianoStepsAsExercise(applyPianoDirection(ascending, directionRef.current))
+      }
       let raw: ExerciseStep[]
       if (modeRef.current === 'scale') {
         raw = expandScaleSequence({
@@ -767,19 +896,56 @@ export function Dexterity() {
         ? `Play the ${arpTitle.toLowerCase()} one note at a time across the strings — trains chord-tone shapes and clean string changes.`
         : pattern.description
 
+  // --- Piano display values -------------------------------------------------
+  const pianoRootName = pcToName(pianoRootPc, 'flat')
+  const pianoTitle =
+    pianoKind === 'scale'
+      ? `${pianoRootName} major scale — ${pianoOctaves} octave${pianoOctaves > 1 ? 's' : ''} · ${HAND_LABELS[pianoHand]} hand`
+      : `${pianoRootName} ${QUALITY_LABELS[pianoQuality].toLowerCase()} five-finger — ${fiveFingerDef.name} · ${HAND_LABELS[pianoHand]} hand`
+  const pianoPanelDesc =
+    pianoKind === 'scale'
+      ? `Play the ${pianoRootName} major scale with its standard fingering, ${pianoOctaves} octave${pianoOctaves > 1 ? 's' : ''}, ${HAND_LABELS[pianoHand].toLowerCase()} hand. Finger numbers show on each key; use Forward + Reverse to run it up and back down.`
+      : fiveFingerDef.description
+  const pianoMarkers = buildKeyboardMarkers(displayPianoSteps, running, activeStepIndex)
+  const pianoMidiList = displayPianoSteps.map((s) => s.midi)
+  const pianoFrom = pianoMidiList.length ? Math.min(...pianoMidiList) - 2 : rootMidi(pianoRootPc, pianoOctave)
+  const pianoTo = pianoMidiList.length ? Math.max(...pianoMidiList) + 2 : rootMidi(pianoRootPc, pianoOctave) + 12
+
   return (
     <div className="tool-page">
       <div className="tool-page-header">
         <h1>Dexterity Exercises</h1>
         <p className="tool-page-lead">
-          Fretting-hand drills rendered with finger numbers and played in time. The current step
-          lights up as it sounds. Audio starts only when you press Start.
+          Fretting-hand and piano drills rendered with finger numbers and played in time. The
+          current step lights up as it sounds. Audio starts only when you press Start.
         </p>
+        <div className="dx-mode" role="radiogroup" aria-label="Instrument type">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!pianoMode}
+            className={`dx-segment${!pianoMode ? ' dx-segment-active' : ''}`}
+            onClick={() => setPianoMode(false)}
+          >
+            Bass / Guitar
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={pianoMode}
+            className={`dx-segment${pianoMode ? ' dx-segment-active' : ''}`}
+            onClick={() => setPianoMode(true)}
+          >
+            Piano
+          </button>
+        </div>
       </div>
 
       <div className="dx-main">
         <div className="dx-picker">
           <span className="tool-control-label">Exercise</span>
+          {!pianoMode && (
+          <>
           <div className="dx-drill-list" role="radiogroup" aria-label="Exercise type">
             {DRILLS.map((d) => (
               <button
@@ -960,9 +1126,157 @@ export function Dexterity() {
               </div>
             )}
           </div>
+          </>
+          )}
+
+          {pianoMode && (
+          <>
+          <div className="dx-drill-list" role="radiogroup" aria-label="Piano exercise type">
+            {PIANO_EXERCISE_KINDS.map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                role="radio"
+                aria-checked={k.id === pianoKind}
+                className={`dx-drill${k.id === pianoKind ? ' dx-drill-active' : ''}`}
+                onClick={() => setPianoKind(k.id)}
+              >
+                <span className="dx-drill-name">{k.name}</span>
+                <span className="dx-drill-tag">{k.tagline}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="dx-panel">
+            <div className="dx-panel-title">{pianoTitle}</div>
+            <p className="dx-panel-desc">{pianoPanelDesc}</p>
+
+            <div className="dx-scale-fields">
+              <label className="dx-scale-field">
+                <span className="tool-control-label">Root</span>
+                <select
+                  className="dx-select"
+                  value={pianoRootPc}
+                  aria-label="Piano exercise root"
+                  onChange={(e) => setPianoRootPc(Number(e.target.value) as PitchClass)}
+                >
+                  {ROOT_PCS.map((pc) => (
+                    <option key={pc} value={pc}>
+                      {pcToName(pc, 'flat')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="dx-scale-field">
+                <span className="tool-control-label">Octave</span>
+                <select
+                  className="dx-select"
+                  value={pianoOctave}
+                  aria-label="Root octave"
+                  onChange={(e) => setPianoOctave(clampPianoOctave(Number(e.target.value)))}
+                >
+                  {Array.from({ length: MAX_PIANO_OCTAVE - MIN_PIANO_OCTAVE + 1 }, (_, i) => MIN_PIANO_OCTAVE + i).map(
+                    (oct) => (
+                      <option key={oct} value={oct}>
+                        {pcToName(pianoRootPc, 'flat')}
+                        {oct}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              {pianoKind === 'five-finger' && (
+                <label className="dx-scale-field">
+                  <span className="tool-control-label">Variation</span>
+                  <select
+                    className="dx-select"
+                    value={pianoPatternId}
+                    aria-label="Five-finger pattern"
+                    onChange={(e) => setPianoPatternId(e.target.value as FiveFingerPatternId)}
+                  >
+                    {FIVE_FINGER_PATTERNS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+
+            <div className="dx-piano-toggles">
+              <div className="dx-setting">
+                <span className="tool-control-label">Hand</span>
+                <div className="dx-segmented" role="group" aria-label="Hand">
+                  {HANDS.map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      className={`dx-segment${h === pianoHand ? ' dx-segment-active' : ''}`}
+                      aria-pressed={h === pianoHand}
+                      onClick={() => setPianoHand(h)}
+                    >
+                      {HAND_LABELS[h]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {pianoKind === 'five-finger' && (
+                <div className="dx-setting">
+                  <span className="tool-control-label">Quality</span>
+                  <div className="dx-segmented" role="group" aria-label="Five-finger quality">
+                    {FIVE_FINGER_QUALITIES.map((q) => (
+                      <button
+                        key={q}
+                        type="button"
+                        className={`dx-segment${q === pianoQuality ? ' dx-segment-active' : ''}`}
+                        aria-pressed={q === pianoQuality}
+                        onClick={() => setPianoQuality(q)}
+                      >
+                        {QUALITY_LABELS[q]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {pianoKind === 'scale' && (
+                <div className="dx-setting">
+                  <span className="tool-control-label">Octaves</span>
+                  <div className="dx-segmented" role="group" aria-label="Scale octaves">
+                    {SCALE_OCTAVE_OPTIONS.map((o) => (
+                      <button
+                        key={o}
+                        type="button"
+                        className={`dx-segment${o === pianoOctaves ? ' dx-segment-active' : ''}`}
+                        aria-pressed={o === pianoOctaves}
+                        onClick={() => setPianoOctaves(o)}
+                      >
+                        {o}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          </>
+          )}
         </div>
 
         <div className="dx-stage">
+          {pianoMode ? (
+            <div className="dx-board">
+              <Keyboard
+                from={pianoFrom}
+                to={pianoTo}
+                markers={pianoMarkers}
+                showLabels="c"
+                ariaLabel={`${pianoTitle} on a piano keyboard`}
+              />
+            </div>
+          ) : (
           <div className="dx-board">
             <Fretboard
               tuning={tuning}
@@ -972,7 +1286,27 @@ export function Dexterity() {
               ariaLabel={`${title} on ${tuning.name}`}
             />
           </div>
+          )}
 
+          {pianoMode ? (
+            <div className="dx-strip" role="list" aria-label="Piano step sequence">
+              {displayPianoSteps.map((step, i) => {
+                const active = running && i === activeStepIndex
+                const accented = displayEvents[i]?.accent ?? false
+                return (
+                  <div
+                    key={`${i}-${step.midi}`}
+                    role="listitem"
+                    className={`dx-strip-step${active ? ' dx-strip-active' : ''}${accented ? ' dx-strip-accent' : ''}`}
+                  >
+                    <span className="dx-strip-order">{i + 1}</span>
+                    <span className="dx-strip-finger">{step.finger}</span>
+                    <span className="dx-strip-meta">{midiToName(step.midi)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
           <div className="dx-strip" role="list" aria-label="Exercise step sequence">
             {displaySteps.map((step, i) => {
               const active = running && i === activeStepIndex
@@ -1002,6 +1336,7 @@ export function Dexterity() {
               )
             })}
           </div>
+          )}
 
           <div className="dx-transport">
             <button
@@ -1028,15 +1363,18 @@ export function Dexterity() {
 
       <div className="dx-settings">
         <div className="dx-settings-row">
-          <div className="dx-setting">
-            <span className="tool-control-label">Instrument</span>
-            <InstrumentPicker
-              value={tuning}
-              onChange={(t) => instrument.setTuningId(t.id)}
-              className="dx-instrument"
-            />
-          </div>
+          {!pianoMode && (
+            <div className="dx-setting">
+              <span className="tool-control-label">Instrument</span>
+              <InstrumentPicker
+                value={tuning}
+                onChange={(t) => instrument.setTuningId(t.id)}
+                className="dx-instrument"
+              />
+            </div>
+          )}
 
+          {!pianoMode && (
           <div className="dx-setting">
             <span className="tool-control-label">Starting fret</span>
             <div className="dx-position">
@@ -1070,6 +1408,7 @@ export function Dexterity() {
               onChange={(e) => changePosition(Number(e.target.value))}
             />
           </div>
+          )}
 
           <div className="dx-setting">
             <span className="tool-control-label">Tempo</span>
@@ -1163,39 +1502,43 @@ export function Dexterity() {
             </div>
 
             <div className="dx-setting">
-              <span className="tool-control-label">Auto-advance position</span>
-              <label className="dx-toggle">
-                <input
-                  type="checkbox"
-                  checked={autoAdvance}
-                  onChange={(e) => setAutoAdvance(e.target.checked)}
-                />
-                <span>Move up one fret each loop</span>
-              </label>
-              <div className={`dx-range${autoAdvance ? '' : ' dx-range-off'}`}>
-                <label className="dx-range-field">
-                  <span>From</span>
-                  <input
-                    type="number"
-                    min={MIN_FRET}
-                    max={MAX_FRET}
-                    value={advanceMin}
-                    disabled={!autoAdvance}
-                    onChange={(e) => setAdvanceMin(clampFret(Number(e.target.value)))}
-                  />
-                </label>
-                <label className="dx-range-field">
-                  <span>To</span>
-                  <input
-                    type="number"
-                    min={MIN_FRET}
-                    max={MAX_FRET}
-                    value={advanceMax}
-                    disabled={!autoAdvance}
-                    onChange={(e) => setAdvanceMax(clampFret(Number(e.target.value)))}
-                  />
-                </label>
-              </div>
+              <span className="tool-control-label">{pianoMode ? 'Metronome' : 'Auto-advance position'}</span>
+              {!pianoMode && (
+                <>
+                  <label className="dx-toggle">
+                    <input
+                      type="checkbox"
+                      checked={autoAdvance}
+                      onChange={(e) => setAutoAdvance(e.target.checked)}
+                    />
+                    <span>Move up one fret each loop</span>
+                  </label>
+                  <div className={`dx-range${autoAdvance ? '' : ' dx-range-off'}`}>
+                    <label className="dx-range-field">
+                      <span>From</span>
+                      <input
+                        type="number"
+                        min={MIN_FRET}
+                        max={MAX_FRET}
+                        value={advanceMin}
+                        disabled={!autoAdvance}
+                        onChange={(e) => setAdvanceMin(clampFret(Number(e.target.value)))}
+                      />
+                    </label>
+                    <label className="dx-range-field">
+                      <span>To</span>
+                      <input
+                        type="number"
+                        min={MIN_FRET}
+                        max={MAX_FRET}
+                        value={advanceMax}
+                        disabled={!autoAdvance}
+                        onChange={(e) => setAdvanceMax(clampFret(Number(e.target.value)))}
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
               <label className="dx-toggle">
                 <input type="checkbox" checked={clickOn} onChange={(e) => setClickOn(e.target.checked)} />
                 <span>Metronome click</span>
@@ -1205,6 +1548,7 @@ export function Dexterity() {
         </details>
       </div>
 
+      {!pianoMode && (
       <details className="dx-more dx-routine">
         <summary className="dx-more-summary">
           Warm-up routine{routineSteps.length > 0 ? ` · ${routineSteps.length} steps · ${formatDuration(routineTotalSeconds)}` : ''}
@@ -1362,6 +1706,7 @@ export function Dexterity() {
           )}
         </div>
       </details>
+      )}
     </div>
   )
 }
@@ -1405,4 +1750,34 @@ function buildMarkers(
     byCell.set(key, { string: step.string, fret: step.fret, label: String(step.finger), variant })
   })
   return [...byCell.values()]
+}
+
+/**
+ * Keyboard analog of `buildMarkers`: one marker per unique midi (a scale played
+ * up and down revisits the same key), labelled with the finger, the current
+ * step accented, others dimmed while running (or the first key marked as the
+ * start when stopped). The highlighted variant always wins a shared key.
+ */
+function buildKeyboardMarkers(
+  steps: readonly PianoStep[],
+  running: boolean,
+  activeStepIndex: number | null,
+): KeyboardMarker[] {
+  const byMidi = new Map<number, KeyboardMarker>()
+  steps.forEach((step, i) => {
+    const highlighted = running ? i === activeStepIndex : i === 0
+    const variant: MarkerVariant = running
+      ? i === activeStepIndex
+        ? 'accent'
+        : 'dim'
+      : i === 0
+        ? 'root'
+        : 'default'
+    const existing = byMidi.get(step.midi)
+    if (existing && (existing.variant === 'accent' || existing.variant === 'root') && !highlighted) {
+      return
+    }
+    byMidi.set(step.midi, { midi: step.midi, label: String(step.finger), variant })
+  })
+  return [...byMidi.values()]
 }
