@@ -21,10 +21,13 @@ import {
   normalizeTheoryQuizSettings,
   QUIZ_CATEGORIES,
   theoryQuizSettingsStore,
+  theoryQuizSrsStore,
   type QuizCategory,
   type TheoryQuizQuestion,
   type TheoryQuizSettings,
 } from '../lib/theoryQuiz.ts'
+import { normalizeSrsData, qualityFromOutcome, reviewKey, type SrsData } from '../lib/spacedRepetition.ts'
+import { recordPractice } from '../lib/practiceLog.ts'
 
 /** How long the answer stays on screen before auto-advancing. */
 const ADVANCE_MS_CORRECT = 900
@@ -49,6 +52,13 @@ export function TheoryQuiz() {
   const [stats, setStats] = useState<QuizStats>(emptyStats)
   const [result, setResult] = useState<AnswerResult<TheoryQuizQuestion, string> | null>(null)
 
+  // Spaced-repetition schedule (per fact). Reviews are recorded on every
+  // answer; the schedule biases which fact is quizzed next. Read via a ref so
+  // the (stable) generator always sees the latest schedule.
+  const [srs, setSrs] = useState<SrsData>(() => normalizeSrsData(theoryQuizSrsStore.get()))
+  const srsRef = useRef(srs)
+  srsRef.current = srs
+
   const clearPendingAdvance = useCallback(() => {
     if (timeoutRef.current !== null) {
       window.clearTimeout(timeoutRef.current)
@@ -69,7 +79,8 @@ export function TheoryQuiz() {
   useEffect(() => {
     clearPendingAdvance()
     const session = new QuizSession<TheoryQuizQuestion, string>({
-      generate: (previous, rng) => generateQuestion(categories, previous, rng),
+      generate: (previous, rng) =>
+        generateQuestion(categories, previous, rng, { srs: srsRef.current, now: Date.now() }),
       check: checkAnswer,
       clock: () => performance.now(),
     })
@@ -90,6 +101,16 @@ export function TheoryQuiz() {
       const res = session.answer(answer)
       setResult(res)
       setStats(session.stats)
+
+      // Record the review and stamp the practice log — Theory Quiz tracks no
+      // other stats, so this is where its activity reaches the dashboard.
+      const now = Date.now()
+      recordPractice(new Date(now))
+      setSrs(
+        theoryQuizSrsStore.update((d) =>
+          reviewKey(d, res.question.srsKey, qualityFromOutcome(res.correct, res.responseMs), now),
+        ),
+      )
 
       clearPendingAdvance()
       timeoutRef.current = window.setTimeout(

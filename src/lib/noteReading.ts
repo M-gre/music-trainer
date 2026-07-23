@@ -19,6 +19,8 @@ import { Store, type StorageBackend } from './storage.ts'
 import { fretMidi, type Tuning } from './theory/instruments.ts'
 import { midiToName, midiToPc, nameToMidi } from './theory/notes.ts'
 import type { Rng } from './quiz.ts'
+import { pickWeighted } from './noteStats.ts'
+import { createSrsStore, srsWeight, type SrsData } from './spacedRepetition.ts'
 import type { Clef } from '../components/staffGeometry.ts'
 
 export type InputMode = 'name' | 'fretboard' | 'keyboard'
@@ -210,20 +212,66 @@ export interface GenerateContext {
 }
 
 /**
+ * Spaced-repetition item key for a single staff note. A note is keyed by
+ * *both* clef and pitch, because reading a given pitch in bass clef is a
+ * distinct skill (a distinct fact to schedule) from reading the same pitch in
+ * treble clef — the whole point of the tool. Stored under `mt:srs:note-reading`.
+ */
+export function srsKeyForNote(clef: Clef, midi: number): string {
+  return `${clef}:${midi}`
+}
+
+/**
+ * Optional spaced-repetition picking. When supplied to
+ * `generateNoteReadingQuestion`, the note drawn within the resolved clef's
+ * range is biased toward the notes that are due for review (see
+ * `spacedRepetition.srsWeight`) rather than drawn uniformly — new and overdue
+ * notes surface more often, well-known ones less. The clef itself is still
+ * resolved as usual (random for the `'both'` setting), so this only steers the
+ * *pitch* within the active clef/range; every note stays reachable.
+ */
+export interface NoteReadingPicking {
+  srs: SrsData
+  now: number
+}
+
+/** Every midi pitch in `range` (inclusive), optionally dropping `avoid`. */
+function notesInRange(range: PitchRange, avoid?: number): number[] {
+  const notes: number[] = []
+  for (let m = range.low; m <= range.high; m++) if (m !== avoid) notes.push(m)
+  // A degenerate single-note range equal to `avoid` must still be pickable.
+  if (notes.length === 0) for (let m = range.low; m <= range.high; m++) notes.push(m)
+  return notes
+}
+
+/**
  * Generate the next question: resolve a concrete clef (random when the
  * setting is `'both'`), resolve its active range, and draw a note — avoiding
  * an immediate repeat only when the previous question shared the same clef
  * (a range change on clef flip makes "avoid" meaningless across clefs).
  * Matches `QuizSession`'s `generate(previous, rng)` shape.
+ *
+ * With `picking` supplied, the pitch is drawn with a spaced-repetition bias
+ * (per `srsKeyForNote`) instead of uniformly; without it, uniformly as before.
  */
 export function generateNoteReadingQuestion(
   ctx: GenerateContext,
   previous: NoteReadingQuestion | null,
   rng: Rng,
+  picking?: NoteReadingPicking,
 ): NoteReadingQuestion {
   const clef = resolveQuestionClef(ctx.clefSetting, rng)
   const range = resolveRange(clef, ctx.rangePreset, ctx.customRange)
   const avoid = previous && previous.clef === clef ? previous.midi : undefined
+  if (picking) {
+    const candidates = notesInRange(range, avoid)
+    const midi = pickWeighted(
+      candidates,
+      (m) => srsWeight(picking.srs[srsKeyForNote(clef, m)], picking.now),
+      rng,
+    )
+    return { midi, clef }
+  }
   const midi = randomNote(range, rng, avoid)
   return { midi, clef }
 }
@@ -397,3 +445,10 @@ export function createNoteReadingSettingsStore(
 
 /** The app-wide note-reading settings store (localStorage-backed). */
 export const noteReadingSettingsStore = createNoteReadingSettingsStore()
+
+/**
+ * Per-note spaced-repetition schedule for this tool (`mt:srs:note-reading`).
+ * Keyed by `srsKeyForNote` (clef + pitch). Tests build their own via
+ * `createSrsStore`.
+ */
+export const noteReadingSrsStore = createSrsStore('note-reading')
