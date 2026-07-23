@@ -364,6 +364,18 @@ describe('DrumKit.playDrum scheduling', () => {
     const softPeak = soft.ctx.gains[0]!.gain.events.find((e) => e.type === 'linear')!.value
     expect(softPeak).toBeLessThan(loudPeak)
   })
+
+  it('scales peak gain linearly with the bus gain option', () => {
+    const peakFor = (gain: number): number => {
+      const { kit, ctx } = makeKit()
+      kit.playDrum('snare', { when: 0, velocity: 1, gain })
+      return ctx.gains[0]!.gain.events.find((e) => e.type === 'linear')!.value
+    }
+    const full = peakFor(1)
+    const half = peakFor(0.5)
+    // A clean linear trim: half the bus gain -> half the layer peak.
+    expect(half).toBeCloseTo(full * 0.5, 5)
+  })
 })
 
 describe('DrumKit teardown', () => {

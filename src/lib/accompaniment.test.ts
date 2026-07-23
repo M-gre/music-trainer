@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest'
 import type { GridPosition } from './audio/scheduler.ts'
 import {
   barToChordIndex,
+  beatMidpoint,
   ChordCompPlayer,
   clampBarsPerChord,
   compChordDuration,
+  compNoteSelection,
   compTriggersAt,
   compVoice,
+  COMP_STYLE_LABELS,
+  COMP_STYLES,
   CUSTOM_PROGRESSION_ID,
   DEFAULT_ACCOMPANIMENT_SETTINGS,
+  isCompStyle,
   keyOptions,
   MAX_CUSTOM_DEGREES,
   normalizeAccompanimentSettings,
@@ -177,6 +182,96 @@ describe('compVoice', () => {
   it('gives the pad a long sustain and the stab a short one', () => {
     expect(compVoice('pad').sustain).toBeGreaterThan(compVoice('stabs').sustain)
   })
+
+  it('gives every style a classic-voice recipe with a defined waveform', () => {
+    for (const style of COMP_STYLES) {
+      expect(compVoice(style).voice).toBe('classic')
+      expect(typeof compVoice(style).type).toBe('string')
+    }
+  })
+})
+
+// --- new comping styles ------------------------------------------------------
+
+describe('comp style identity', () => {
+  it('recognises every shipped style and rejects others', () => {
+    expect(COMP_STYLES).toEqual(['pad', 'stabs', 'arpeggio', 'offbeat', 'block'])
+    for (const style of COMP_STYLES) expect(isCompStyle(style)).toBe(true)
+    expect(isCompStyle('bogus')).toBe(false)
+    expect(isCompStyle(42)).toBe(false)
+  })
+
+  it('labels every style', () => {
+    for (const style of COMP_STYLES) expect(COMP_STYLE_LABELS[style].length).toBeGreaterThan(0)
+  })
+})
+
+describe('beatMidpoint', () => {
+  it('is half the steps for an even grid, null for an odd one', () => {
+    expect(beatMidpoint(2)).toBe(1)
+    expect(beatMidpoint(4)).toBe(2)
+    expect(beatMidpoint(3)).toBeNull()
+  })
+})
+
+describe('compTriggersAt (new styles)', () => {
+  it('block fires on the even beat heads only (half-note pulse)', () => {
+    expect(compTriggersAt(pos(0, 0), 'block')).toBe(true)
+    expect(compTriggersAt(pos(0, 2), 'block')).toBe(true)
+    expect(compTriggersAt(pos(0, 1), 'block')).toBe(false)
+    expect(compTriggersAt(pos(0, 3), 'block')).toBe(false)
+    expect(compTriggersAt(pos(0, 0, 1), 'block')).toBe(false)
+  })
+
+  it('offbeat fires on the beat mid-point of an even grid', () => {
+    expect(compTriggersAt(pos(0, 0, 1), 'offbeat', 2)).toBe(true)
+    expect(compTriggersAt(pos(0, 0, 0), 'offbeat', 2)).toBe(false)
+    expect(compTriggersAt(pos(0, 0, 2), 'offbeat', 4)).toBe(true)
+    expect(compTriggersAt(pos(0, 0, 1), 'offbeat', 4)).toBe(false)
+  })
+
+  it('offbeat is silent on a triplet (odd) grid', () => {
+    for (const sub of [0, 1, 2]) expect(compTriggersAt(pos(0, 0, sub), 'offbeat', 3)).toBe(false)
+  })
+
+  it('arpeggio fires on every eighth (head and mid-point)', () => {
+    expect(compTriggersAt(pos(0, 0, 0), 'arpeggio', 2)).toBe(true)
+    expect(compTriggersAt(pos(0, 0, 1), 'arpeggio', 2)).toBe(true)
+    expect(compTriggersAt(pos(0, 0, 2), 'arpeggio', 4)).toBe(true)
+    expect(compTriggersAt(pos(0, 0, 1), 'arpeggio', 4)).toBe(false)
+  })
+})
+
+describe('compNoteSelection', () => {
+  it('returns the whole voicing for chordal styles', () => {
+    expect(compNoteSelection(pos(0, 0), 'pad', [60, 64, 67])).toEqual([60, 64, 67])
+    expect(compNoteSelection(pos(0, 1, 1), 'offbeat', [60, 64, 67])).toEqual([60, 64, 67])
+  })
+
+  it('walks the arpeggio low→high across the bar, wrapping past the top', () => {
+    const v = [60, 64, 67]
+    expect(compNoteSelection(pos(0, 0, 0), 'arpeggio', v)).toEqual([60])
+    expect(compNoteSelection(pos(0, 0, 1), 'arpeggio', v)).toEqual([64])
+    expect(compNoteSelection(pos(0, 1, 0), 'arpeggio', v)).toEqual([67])
+    expect(compNoteSelection(pos(0, 1, 1), 'arpeggio', v)).toEqual([60]) // wraps
+  })
+
+  it('returns nothing for an empty voicing', () => {
+    expect(compNoteSelection(pos(0, 0, 0), 'arpeggio', [])).toEqual([])
+  })
+})
+
+describe('compChordDuration (new styles)', () => {
+  it('holds a block chord longer than a stab but under a full bar', () => {
+    const block = compChordDuration('block', 4, 120)
+    expect(block).toBeGreaterThan(compChordDuration('stabs', 4, 120))
+    expect(block).toBeLessThan(compChordDuration('pad', 4, 120))
+  })
+
+  it('keeps arpeggio notes and offbeat skanks short', () => {
+    expect(compChordDuration('arpeggio', 4, 120)).toBeCloseTo(0.25)
+    expect(compChordDuration('offbeat', 4, 120)).toBeCloseTo(0.14)
+  })
 })
 
 // --- ChordCompPlayer ---------------------------------------------------------
@@ -205,9 +300,11 @@ function config(patch: Partial<ChordCompConfig>): ChordCompConfig {
     ],
     barsPerChord: 1,
     beatsPerBar: 4,
+    subdivisionsPerBeat: 2,
     bpm: 120,
     countInBars: 1,
     velocity: 0.5,
+    volume: 1,
     ...patch,
   }
 }
@@ -265,6 +362,37 @@ describe('ChordCompPlayer', () => {
     player.configure(config({ countInBars: 0 }))
     player.handleEvent(pos(0, 0), 0)
     expect(trigger.calls).toHaveLength(1)
+  })
+
+  it('scales the comp velocity by the accompaniment volume', () => {
+    const trigger = mockTrigger()
+    const player = new ChordCompPlayer(trigger, config({ velocity: 0.5, volume: 0.5 }))
+    player.handleEvent(pos(1, 0), 2)
+    expect(trigger.calls[0]!.opts?.velocity).toBeCloseTo(0.25)
+  })
+
+  it('plays a single ascending note per hit under the arpeggio style', () => {
+    const trigger = mockTrigger()
+    const player = new ChordCompPlayer(
+      trigger,
+      config({ style: 'arpeggio', countInBars: 0, subdivisionsPerBeat: 2 }),
+    )
+    player.handleEvent(pos(0, 0, 0), 0)
+    player.handleEvent(pos(0, 0, 1), 0.25)
+    player.handleEvent(pos(0, 1, 0), 0.5)
+    expect(trigger.calls.map((c) => c.midis)).toEqual([[60], [64], [67]])
+  })
+
+  it('skanks the whole chord only on the offbeat', () => {
+    const trigger = mockTrigger()
+    const player = new ChordCompPlayer(
+      trigger,
+      config({ style: 'offbeat', countInBars: 0, subdivisionsPerBeat: 2 }),
+    )
+    player.handleEvent(pos(0, 0, 0), 0) // beat head: silent
+    player.handleEvent(pos(0, 0, 1), 0.25) // the "&": fires
+    expect(trigger.calls).toHaveLength(1)
+    expect(trigger.calls[0]!.midis).toEqual([60, 64, 67])
   })
 })
 

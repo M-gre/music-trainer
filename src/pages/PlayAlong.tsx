@@ -27,12 +27,15 @@ import {
   GroovePlayer,
   grooveBeatsPerBar,
   Scheduler,
+  subdivisionsPerBeat,
   type DrumVoice,
   type Groove,
 } from '../lib/audio/index.ts'
 import {
   barToChordIndex,
   ChordCompPlayer,
+  COMP_STYLE_LABELS,
+  COMP_STYLES,
   CUSTOM_PROGRESSION_ID,
   DEFAULT_COMP_VELOCITY,
   keyOptions,
@@ -94,6 +97,8 @@ export function PlayAlong() {
   const [tempo, setTempo] = useState(settings.bpm)
   const [countIn, setCountIn] = useState(settings.countIn)
   const [masterVolume, setMasterVolume] = useState(settings.masterVolume)
+  const [drumVolume, setDrumVolume] = useState(settings.drumVolume)
+  const [accompanimentVolume, setAccompanimentVolume] = useState(settings.accompanimentVolume)
   const [muted, setMuted] = useState<DrumVoice[]>(settings.mutedVoices)
   const [running, setRunning] = useState(false)
   const [activeBeat, setActiveBeat] = useState<number | null>(null)
@@ -122,6 +127,7 @@ export function PlayAlong() {
   const groove = getGroove(grooveId)
   const voices = grooveVoices(groove)
   const beatCount = grooveBeatsPerBar(groove)
+  const subsPerBeat = subdivisionsPerBeat(groove.subdivision)
 
   // Resolve the accompaniment settings into chords + voice-led voicings once
   // per change; the audio player and the display both read from this.
@@ -167,13 +173,15 @@ export function PlayAlong() {
       voicings: resolved.voicings,
       barsPerChord: resolved.barsPerChord,
       beatsPerBar: beatCount,
+      subdivisionsPerBeat: subsPerBeat,
       // Follow the effective (possibly ramped) tempo so the comp's chord
       // durations track the tempo trainer.
       bpm: currentBpm,
       countInBars: countIn ? 1 : 0,
       velocity: DEFAULT_COMP_VELOCITY,
+      volume: accompanimentVolume,
     }),
-    [accEnabled, accStyle, resolved, beatCount, currentBpm, countIn],
+    [accEnabled, accStyle, resolved, beatCount, subsPerBeat, currentBpm, countIn, accompanimentVolume],
   )
 
   // Persist preferences whenever they change.
@@ -183,6 +191,8 @@ export function PlayAlong() {
       bpm: tempo,
       countIn,
       masterVolume,
+      drumVolume,
+      accompanimentVolume,
       mutedVoices: muted,
       accompaniment: {
         enabled: accEnabled,
@@ -206,6 +216,8 @@ export function PlayAlong() {
     tempo,
     countIn,
     masterVolume,
+    drumVolume,
+    accompanimentVolume,
     muted,
     accEnabled,
     accRootPc,
@@ -246,6 +258,9 @@ export function PlayAlong() {
   useEffect(() => {
     engineRef.current.setMasterVolume(masterVolume)
   }, [masterVolume])
+  useEffect(() => {
+    playerRef.current?.setVolume(drumVolume)
+  }, [drumVolume])
   useEffect(() => {
     const player = playerRef.current
     if (!player) return
@@ -308,6 +323,7 @@ export function PlayAlong() {
         groove: getGroove(grooveId),
         countIn: { bars: countIn ? 1 : 0 },
         muted,
+        drumVolume,
       })
       comp = new ChordCompPlayer(engine)
       schedulerRef.current = scheduler
@@ -316,6 +332,7 @@ export function PlayAlong() {
     } else {
       scheduler.setTempo(tempo)
       player.setCountIn({ bars: countIn ? 1 : 0 })
+      player.setVolume(drumVolume)
       for (const voice of DRUM_VOICES) player.setMuted(voice, muted.includes(voice))
     }
     // Apply the groove's meter/swing to the transport (also done by
@@ -336,7 +353,7 @@ export function PlayAlong() {
     scheduler.start()
     setRunning(true)
     if (rafRef.current === null) rafRef.current = requestAnimationFrame(runIndicator)
-  }, [tempo, grooveId, countIn, masterVolume, muted, compConfig, runIndicator])
+  }, [tempo, grooveId, countIn, masterVolume, drumVolume, muted, compConfig, runIndicator])
 
   const stop = useCallback(() => {
     const scheduler = schedulerRef.current
@@ -376,6 +393,8 @@ export function PlayAlong() {
 
   const beats = Array.from({ length: beatCount }, (_, i) => i)
   const volumePercent = Math.round(masterVolume * 100)
+  const drumVolumePercent = Math.round(drumVolume * 100)
+  const accompanimentVolumePercent = Math.round(accompanimentVolume * 100)
 
   // Chord-tones panel: the current chord (index 0 when stopped, so the upcoming
   // first chord is shown) mapped to fretboard markers on the global tuning.
@@ -538,6 +557,39 @@ export function PlayAlong() {
               />
               <span className="pa-volume-value">{volumePercent}%</span>
             </div>
+          </div>
+
+          <div className="tool-control-group pa-mix-group">
+            <span className="tool-control-label">Mix</span>
+            <label className="pa-mix-row">
+              <span className="pa-mix-label">Drums</span>
+              <input
+                type="range"
+                className="pa-slider"
+                min={0}
+                max={100}
+                value={drumVolumePercent}
+                aria-label="Drums volume"
+                onChange={(e) => setDrumVolume(Number(e.target.value) / 100)}
+              />
+              <span className="pa-volume-value">{drumVolumePercent}%</span>
+            </label>
+            <label className="pa-mix-row">
+              <span className="pa-mix-label">Accompaniment</span>
+              <input
+                type="range"
+                className="pa-slider"
+                min={0}
+                max={100}
+                value={accompanimentVolumePercent}
+                aria-label="Accompaniment volume"
+                onChange={(e) => setAccompanimentVolume(Number(e.target.value) / 100)}
+              />
+              <span className="pa-volume-value">{accompanimentVolumePercent}%</span>
+            </label>
+            <p className="pa-mix-hint">
+              Drums are the backbone; the accompaniment sits under them by default.
+            </p>
           </div>
 
           <div className="tool-control-group pa-trainer-group">
@@ -842,26 +894,20 @@ export function PlayAlong() {
               <span className="pa-seg-note">Fixed by the 12-bar form</span>
             )}
 
-            <span className="tool-control-label pa-style-label">Voice</span>
-            <div className="pa-seg" role="radiogroup" aria-label="Comping voice">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={accStyle === 'pad'}
-                className={`pa-seg-btn${accStyle === 'pad' ? ' pa-seg-btn-active' : ''}`}
-                onClick={() => setAccStyle('pad')}
-              >
-                Pad
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={accStyle === 'stabs'}
-                className={`pa-seg-btn${accStyle === 'stabs' ? ' pa-seg-btn-active' : ''}`}
-                onClick={() => setAccStyle('stabs')}
-              >
-                Stabs
-              </button>
+            <span className="tool-control-label pa-style-label">Style</span>
+            <div className="pa-seg pa-style-seg" role="radiogroup" aria-label="Comping style">
+              {COMP_STYLES.map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  role="radio"
+                  aria-checked={accStyle === style}
+                  className={`pa-seg-btn${accStyle === style ? ' pa-seg-btn-active' : ''}`}
+                  onClick={() => setAccStyle(style)}
+                >
+                  {COMP_STYLE_LABELS[style]}
+                </button>
+              ))}
             </div>
           </div>
         </div>

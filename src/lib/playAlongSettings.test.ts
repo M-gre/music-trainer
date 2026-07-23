@@ -5,6 +5,8 @@ import { memoryBackend } from './storage.ts'
 import {
   clampPlayAlongTempo,
   createPlayAlongSettingsStore,
+  DEFAULT_ACCOMPANIMENT_VOLUME,
+  DEFAULT_DRUM_VOLUME,
   DEFAULT_PLAY_ALONG_SETTINGS,
   DEFAULT_PLAY_ALONG_TEMPO,
   grooveVoices,
@@ -58,6 +60,8 @@ describe('normalizePlayAlongSettings', () => {
       bpm: 96,
       countIn: false,
       masterVolume: 0.5,
+      drumVolume: 0.9,
+      accompanimentVolume: 0.6,
       mutedVoices: ['snare'],
       accompaniment: {
         enabled: true,
@@ -91,11 +95,21 @@ describe('normalizePlayAlongSettings', () => {
       bpm: MAX_PLAY_ALONG_TEMPO,
       countIn: DEFAULT_PLAY_ALONG_SETTINGS.countIn,
       masterVolume: 1,
+      drumVolume: DEFAULT_DRUM_VOLUME,
+      accompanimentVolume: DEFAULT_ACCOMPANIMENT_VOLUME,
       mutedVoices: [],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
       showChordTones: DEFAULT_PLAY_ALONG_SETTINGS.showChordTones,
       tempoTrainer: DEFAULT_TEMPO_TRAINER,
     })
+  })
+
+  it('clamps the drum and accompaniment mix volumes into 0..1', () => {
+    const over = normalizePlayAlongSettings({ drumVolume: 3, accompanimentVolume: -0.5 })
+    expect(over.drumVolume).toBe(1)
+    expect(over.accompanimentVolume).toBe(0)
+    const nan = normalizePlayAlongSettings({ drumVolume: Number.NaN })
+    expect(nan.drumVolume).toBe(DEFAULT_DRUM_VOLUME)
   })
 
   it('validates, dedupes and re-orders muted voices', () => {
@@ -129,6 +143,8 @@ describe('play-along settings store', () => {
       bpm: 88,
       countIn: false,
       masterVolume: 0.65,
+      drumVolume: 0.8,
+      accompanimentVolume: 0.5,
       mutedVoices: ['kick', 'hat-closed'],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
       showChordTones: false,
@@ -160,6 +176,8 @@ describe('play-along settings store', () => {
       bpm: 132,
       countIn: false,
       masterVolume: 0.4,
+      drumVolume: DEFAULT_DRUM_VOLUME,
+      accompanimentVolume: DEFAULT_ACCOMPANIMENT_VOLUME,
       mutedVoices: ['snare'],
       accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
       showChordTones: DEFAULT_PLAY_ALONG_SETTINGS.showChordTones,
@@ -167,7 +185,7 @@ describe('play-along settings store', () => {
     })
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(4)
+    expect(raw && JSON.parse(raw).v).toBe(5)
   })
 
   it('migrates v2 data (no showChordTones) by filling in the default', () => {
@@ -200,9 +218,11 @@ describe('play-along settings store', () => {
     expect(migrated.accompaniment.rootPc).toBe(2)
     expect(migrated.showChordTones).toBe(DEFAULT_PLAY_ALONG_SETTINGS.showChordTones)
     expect(migrated.tempoTrainer).toEqual(DEFAULT_TEMPO_TRAINER)
+    expect(migrated.drumVolume).toBe(DEFAULT_DRUM_VOLUME)
+    expect(migrated.accompanimentVolume).toBe(DEFAULT_ACCOMPANIMENT_VOLUME)
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(4)
+    expect(raw && JSON.parse(raw).v).toBe(5)
   })
 
   it('migrates v3 data (no tempoTrainer) by filling in the default', () => {
@@ -229,9 +249,39 @@ describe('play-along settings store', () => {
     expect(migrated.bpm).toBe(128)
     expect(migrated.showChordTones).toBe(false)
     expect(migrated.tempoTrainer).toEqual(DEFAULT_TEMPO_TRAINER)
+    expect(migrated.drumVolume).toBe(DEFAULT_DRUM_VOLUME)
+    expect(migrated.accompanimentVolume).toBe(DEFAULT_ACCOMPANIMENT_VOLUME)
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(4)
+    expect(raw && JSON.parse(raw).v).toBe(5)
+  })
+
+  it('migrates v4 data (no mix volumes) by filling in the defaults', () => {
+    const backend = memoryBackend()
+    // A v4 envelope has the tempo trainer but predates the drum/accompaniment mix.
+    backend.setItem(
+      'mt:settings:play-along',
+      JSON.stringify({
+        v: 4,
+        data: {
+          grooveId: 'disco',
+          bpm: 118,
+          countIn: true,
+          masterVolume: 0.7,
+          mutedVoices: ['ride'],
+          accompaniment: DEFAULT_ACCOMPANIMENT_SETTINGS,
+          showChordTones: true,
+          tempoTrainer: DEFAULT_TEMPO_TRAINER,
+        },
+      }),
+    )
+    const migrated = createPlayAlongSettingsStore(backend).get()
+    expect(migrated.grooveId).toBe('disco')
+    expect(migrated.masterVolume).toBe(0.7)
+    expect(migrated.drumVolume).toBe(DEFAULT_DRUM_VOLUME)
+    expect(migrated.accompanimentVolume).toBe(DEFAULT_ACCOMPANIMENT_VOLUME)
+    const raw = backend.getItem('mt:settings:play-along')
+    expect(raw && JSON.parse(raw).v).toBe(5)
   })
 
   it('normalizes corrupt persisted data back to defaults on read', () => {
