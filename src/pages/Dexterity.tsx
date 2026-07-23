@@ -28,7 +28,6 @@ import {
 import {
   clampBpm,
   clampFret,
-  DEXTERITY_MODES,
   dexteritySettingsStore,
   MAX_BPM,
   MAX_FRET,
@@ -39,14 +38,19 @@ import {
 } from '../lib/dexteritySettings.ts'
 import {
   applyDirection,
+  BUILTIN_PATTERNS,
+  CHROMATIC_POSITION_SHIFT,
   DIRECTIONS,
   expandPattern,
   getPattern,
   locateStep,
-  patternsByCategory,
   positionForLoop,
+  ROLL_ONE_FINGER,
+  STRING_CROSSING_12,
+  TRILL_12,
   type Direction,
   type ExerciseStep,
+  type PatternCategory,
 } from '../lib/exercises.ts'
 import {
   ACCENT_EVERY_N_OPTIONS,
@@ -80,7 +84,7 @@ import {
   dailyPermutationSet,
   dateKey,
   getPermutationPattern,
-  isPermutationId,
+  permutationId,
 } from '../lib/permutations.ts'
 
 /** Labels for the accent-every-N control (0 = the accent layer is off). */
@@ -97,10 +101,44 @@ const DIRECTION_LABELS: Record<Direction, string> = {
   'forward-reverse': 'Forward + Reverse',
 }
 
-const MODE_LABELS: Record<DexterityMode, string> = {
-  pattern: 'Patterns',
-  scale: 'Scale sequences',
-  arpeggio: 'Arpeggios',
+/**
+ * The flat catalog of exercise *types*. Each is a small number of patterns (or
+ * a whole scale/arpeggio family) reached through per-drill parameters, rather
+ * than one card per pattern. The pattern-backed drills map onto a
+ * `PatternCategory`; `scale` and `arpeggio` map onto the two non-pattern modes.
+ */
+type DrillType = PatternCategory | 'scale' | 'arpeggio'
+
+interface DrillMeta {
+  id: DrillType
+  name: string
+  tagline: string
+}
+
+const DRILLS: readonly DrillMeta[] = [
+  { id: 'spider', name: 'Spider walk', tagline: 'One finger per fret — any of 24 finger orders' },
+  { id: 'crossing', name: 'String crossing', tagline: 'Clean changes across adjacent & skipped strings' },
+  { id: 'shift', name: 'Position shift', tagline: 'Move the hand up the neck mid-phrase' },
+  { id: 'roll', name: 'Finger rolls', tagline: 'Same fret rolled across adjacent strings' },
+  { id: 'trill', name: 'Trills & bursts', tagline: 'Rapid two-finger alternation per string' },
+  { id: 'scale', name: 'Scale sequence', tagline: 'Run a scale through a sequence pattern' },
+  { id: 'arpeggio', name: 'Arpeggio', tagline: 'Chord tones across strings & inversions' },
+]
+
+/** The pattern id a pattern-backed drill lands on when first selected. */
+const CATEGORY_DEFAULT_PATTERN: Record<PatternCategory, string> = {
+  spider: permutationId([1, 2, 3, 4]),
+  crossing: STRING_CROSSING_12.id,
+  shift: CHROMATIC_POSITION_SHIFT.id,
+  roll: ROLL_ONE_FINGER.id,
+  trill: TRILL_12.id,
+}
+
+/** The pattern-backed drills, in `DRILLS` order — used to build the "Variant" pickers. */
+const PATTERN_DRILLS: readonly PatternCategory[] = ['spider', 'crossing', 'shift', 'roll', 'trill']
+
+function isPatternDrill(d: DrillType): d is PatternCategory {
+  return (PATTERN_DRILLS as readonly string[]).includes(d)
 }
 
 /** The twelve pitch classes as root options for the scale-sequence picker. */
@@ -141,7 +179,6 @@ export function Dexterity() {
   const [activeLoop, setActiveLoop] = useState(0)
 
   const pattern = useMemo(() => getPermutationPattern(patternId) ?? getPattern(patternId), [patternId])
-  const patternGroups = useMemo(() => patternsByCategory(), [])
   const rhythm = useMemo(() => getRhythm(rhythmId), [rhythmId])
   const scale = useMemo(() => getScale(scaleId), [scaleId])
   const sequence = useMemo(() => getSequencePattern(sequenceId), [sequenceId])
@@ -423,12 +460,52 @@ export function Dexterity() {
   const arpTitle = `${pcToName(arpRootPc)}${arpQuality.symbol} arpeggio — ${
     availableInversions.find((i) => i.id === arpInversion)?.name ?? 'Root position'
   }`
+
+  // The currently selected exercise *type*: scale/arpeggio come straight from
+  // the mode, every pattern-backed drill from the active pattern's category
+  // (so a permutation picked in the Spider dropdown still reads as "spider").
+  const activeDrill: DrillType = mode === 'scale' ? 'scale' : mode === 'arpeggio' ? 'arpeggio' : pattern.category
+
+  // Switch drill type. Scale/arpeggio just flip the mode; a pattern drill flips
+  // to pattern mode and, only when leaving its category, resets to that
+  // category's default pattern — so switching away and back keeps the variant.
+  const selectDrill = (d: DrillType) => {
+    if (d === 'scale') {
+      setMode('scale')
+    } else if (d === 'arpeggio') {
+      setMode('arpeggio')
+    } else {
+      setMode('pattern')
+      if (pattern.category !== d) setPatternId(CATEGORY_DEFAULT_PATTERN[d])
+    }
+  }
+
+  // The spider drill's finger order, derived from the motif's finger sequence
+  // so it works for both `perm-####` ids and the legacy hand-picked spider
+  // patterns; the dropdown/chip selection round-trips through the perm id.
+  const spiderOrderId = permutationId(pattern.motif.map((c) => c.finger))
+  const spiderOrderLabel = pattern.motif.map((c) => c.finger).join('-')
+
   const title =
-    mode === 'scale'
+    activeDrill === 'scale'
       ? `${rootName} ${scale.name} — ${sequence.name}`
-      : mode === 'arpeggio'
+      : activeDrill === 'arpeggio'
         ? arpTitle
         : pattern.name
+
+  // Single description panel for the selected drill only (no per-card blurbs).
+  const panelTitle =
+    activeDrill === 'spider'
+      ? `Spider walk · ${spiderOrderLabel}`
+      : activeDrill === 'scale' || activeDrill === 'arpeggio'
+        ? title
+        : `${DRILLS.find((d) => d.id === activeDrill)?.name ?? ''} · ${pattern.name}`
+  const panelDesc =
+    activeDrill === 'scale'
+      ? sequence.description
+      : activeDrill === 'arpeggio'
+        ? `Play the ${arpTitle.toLowerCase()} one note at a time across the strings — trains chord-tone shapes and clean string changes.`
+        : pattern.description
 
   return (
     <div className="tool-page">
@@ -440,420 +517,411 @@ export function Dexterity() {
         </p>
       </div>
 
-      <div className="tool-controls">
-        <div className="tool-control-group">
-          <span className="tool-control-label">Drill type</span>
-          <div className="dx-segmented" role="group" aria-label="Drill type">
-            {DEXTERITY_MODES.map((m) => (
+      <div className="dx-main">
+        <div className="dx-picker">
+          <span className="tool-control-label">Exercise</span>
+          <div className="dx-drill-list" role="radiogroup" aria-label="Exercise type">
+            {DRILLS.map((d) => (
               <button
-                key={m}
+                key={d.id}
                 type="button"
-                className={`dx-segment${m === mode ? ' dx-segment-active' : ''}`}
-                aria-pressed={m === mode}
-                onClick={() => setMode(m)}
+                role="radio"
+                aria-checked={d.id === activeDrill}
+                className={`dx-drill${d.id === activeDrill ? ' dx-drill-active' : ''}`}
+                onClick={() => selectDrill(d.id)}
               >
-                {MODE_LABELS[m]}
+                <span className="dx-drill-name">{d.name}</span>
+                <span className="dx-drill-tag">{d.tagline}</span>
               </button>
             ))}
           </div>
-        </div>
 
-        {mode === 'pattern' && (
-          <>
-            <div className="tool-control-group dx-pattern-group">
-              <span className="tool-control-label">Pattern</span>
-              <div className="dx-patterns" role="radiogroup" aria-label="Exercise pattern">
-            {patternGroups.map(
-              (group) =>
-                group.patterns.length > 0 && (
-                  <div className="dx-pattern-category" key={group.category}>
-                    <span className="dx-pattern-category-label">{group.label}</span>
-                    {group.patterns.map((p) => (
+          <div className="dx-panel">
+            <div className="dx-panel-title">{panelTitle}</div>
+            <p className="dx-panel-desc">{panelDesc}</p>
+
+            {activeDrill === 'spider' && (
+              <div className="dx-variant">
+                <label className="dx-field">
+                  <span className="tool-control-label">Finger order (all 24)</span>
+                  <select
+                    className="dx-select"
+                    value={spiderOrderId}
+                    aria-label="Spider-walk finger order"
+                    onChange={(e) => setPatternId(e.target.value)}
+                  >
+                    {ALL_PERMUTATION_PATTERNS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.motif.map((c) => c.finger).join('-')}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span className="tool-control-label">Today&rsquo;s set · {todayKey}</span>
+                <div className="dx-chips" role="group" aria-label="Suggested finger orders for today">
+                  {dailySet.map((p) => {
+                    const label = p.motif.map((c) => c.finger).join('-')
+                    const active = p.id === spiderOrderId
+                    return (
                       <button
                         key={p.id}
                         type="button"
-                        role="radio"
-                        aria-checked={p.id === patternId}
-                        className={`dx-pattern${p.id === patternId ? ' dx-pattern-active' : ''}`}
+                        className={`dx-chip${active ? ' dx-chip-active' : ''}`}
+                        aria-pressed={active}
                         onClick={() => setPatternId(p.id)}
                       >
-                        <span className="dx-pattern-name">{p.name}</span>
-                        <span className="dx-pattern-desc">{p.description}</span>
+                        {label}
                       </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {isPatternDrill(activeDrill) && activeDrill !== 'spider' && (
+              <label className="dx-field">
+                <span className="tool-control-label">Variant</span>
+                <select
+                  className="dx-select"
+                  value={patternId}
+                  aria-label="Exercise variant"
+                  onChange={(e) => setPatternId(e.target.value)}
+                >
+                  {BUILTIN_PATTERNS.filter((p) => p.category === activeDrill).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {activeDrill === 'scale' && (
+              <div className="dx-scale-fields">
+                <label className="dx-scale-field">
+                  <span className="tool-control-label">Root</span>
+                  <select
+                    className="dx-select"
+                    value={scaleRootPc}
+                    aria-label="Scale root"
+                    onChange={(e) => setScaleRootPc(Number(e.target.value) as PitchClass)}
+                  >
+                    {ROOT_PCS.map((pc) => (
+                      <option key={pc} value={pc}>
+                        {pcToName(pc)}
+                      </option>
                     ))}
-                  </div>
-                ),
+                  </select>
+                </label>
+                <label className="dx-scale-field">
+                  <span className="tool-control-label">Scale</span>
+                  <select
+                    className="dx-select"
+                    value={scaleId}
+                    aria-label="Scale type"
+                    onChange={(e) => setScaleId(e.target.value)}
+                  >
+                    {SCALES.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="dx-scale-field">
+                  <span className="tool-control-label">Sequence</span>
+                  <select
+                    className="dx-select"
+                    value={sequenceId}
+                    aria-label="Sequence pattern"
+                    onChange={(e) => setSequenceId(e.target.value as SequencePatternId)}
+                  >
+                    {SEQUENCE_PATTERNS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+
+            {activeDrill === 'arpeggio' && (
+              <div className="dx-scale-fields">
+                <label className="dx-scale-field">
+                  <span className="tool-control-label">Root</span>
+                  <select
+                    className="dx-select"
+                    value={arpRootPc}
+                    aria-label="Chord root"
+                    onChange={(e) => setArpRootPc(Number(e.target.value) as PitchClass)}
+                  >
+                    {ROOT_PCS.map((pc) => (
+                      <option key={pc} value={pc}>
+                        {pcToName(pc)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="dx-scale-field">
+                  <span className="tool-control-label">Quality</span>
+                  <select
+                    className="dx-select"
+                    value={arpQualityId}
+                    aria-label="Chord quality"
+                    onChange={(e) => setArpQualityId(e.target.value)}
+                  >
+                    {arpQualityGroups.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {group.qualities.map((q) => (
+                          <option key={q.id} value={q.id}>
+                            {q.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+                <label className="dx-scale-field">
+                  <span className="tool-control-label">Inversion</span>
+                  <select
+                    className="dx-select"
+                    value={arpInversion}
+                    aria-label="Chord inversion"
+                    onChange={(e) => setArpInversion(e.target.value as Inversion)}
+                  >
+                    {availableInversions.map((inv) => (
+                      <option key={inv.id} value={inv.id}>
+                        {inv.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="tool-control-group dx-pattern-group">
-          <span className="tool-control-label">Daily permutations — {todayKey}</span>
-          <div className="dx-patterns" role="radiogroup" aria-label="Today's permutation set">
-            <div className="dx-pattern-category">
-              <span className="dx-pattern-category-label">
-                Today&rsquo;s set of {dailySet.length} (cycles through all 24 over ~6 days)
-              </span>
-              {dailySet.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={p.id === patternId}
-                  className={`dx-pattern${p.id === patternId ? ' dx-pattern-active' : ''}`}
-                  onClick={() => setPatternId(p.id)}
-                >
-                  <span className="dx-pattern-name">{p.name}</span>
-                  <span className="dx-pattern-desc">{p.description}</span>
-                </button>
-              ))}
-            </div>
+        <div className="dx-stage">
+          <div className="dx-board">
+            <Fretboard
+              tuning={tuning}
+              fromFret={fromFret}
+              toFret={toFret}
+              markers={markers}
+              ariaLabel={`${title} on ${tuning.name}`}
+            />
           </div>
-          <label className="dx-permutation-picker">
-            <span className="tool-control-label">All permutations (free practice)</span>
-            <select
-              className="dx-select"
-              value={isPermutationId(patternId) ? patternId : ''}
-              aria-label="Choose any of the 24 finger permutations"
-              onChange={(e) => {
-                if (e.target.value) setPatternId(e.target.value)
-              }}
-            >
-              <option value="" disabled>
-                Choose a permutation…
-              </option>
-              {ALL_PERMUTATION_PATTERNS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-          </>
-        )}
 
-        {mode === 'scale' && (
-          <div className="tool-control-group dx-scale-group">
-            <span className="tool-control-label">Scale sequence</span>
-            <div className="dx-scale-fields">
-              <label className="dx-scale-field">
-                <span className="tool-control-label">Root</span>
-                <select
-                  className="dx-select"
-                  value={scaleRootPc}
-                  aria-label="Scale root"
-                  onChange={(e) => setScaleRootPc(Number(e.target.value) as PitchClass)}
+          <div className="dx-strip" role="list" aria-label="Exercise step sequence">
+            {displaySteps.map((step, i) => {
+              const active = running && i === activeStepIndex
+              const accented = displayEvents[i]?.accent ?? false
+              return (
+                <div
+                  key={`${i}-${step.string}-${step.fret}`}
+                  role="listitem"
+                  className={`dx-strip-step${active ? ' dx-strip-active' : ''}${accented ? ' dx-strip-accent' : ''}`}
                 >
-                  {ROOT_PCS.map((pc) => (
-                    <option key={pc} value={pc}>
-                      {pcToName(pc)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="dx-scale-field">
-                <span className="tool-control-label">Scale</span>
-                <select
-                  className="dx-select"
-                  value={scaleId}
-                  aria-label="Scale type"
-                  onChange={(e) => setScaleId(e.target.value)}
-                >
-                  {SCALES.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <span className="dx-strip-order">{i + 1}</span>
+                  <span className="dx-strip-finger">{step.finger}</span>
+                  <span className="dx-strip-meta">
+                    {midiToName(step.midi)} · str {step.string + 1} · fr {step.fret}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="dx-transport">
+            <button
+              type="button"
+              className={`dx-start${running ? ' dx-start-active' : ''}`}
+              onClick={() => (running ? stop() : void start())}
+            >
+              {running ? 'Stop' : 'Start'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="dx-settings">
+        <div className="dx-settings-row">
+          <div className="dx-setting">
+            <span className="tool-control-label">Instrument</span>
+            <InstrumentPicker
+              value={tuning}
+              onChange={(t) => instrument.setTuningId(t.id)}
+              className="dx-instrument"
+            />
+          </div>
+
+          <div className="dx-setting">
+            <span className="tool-control-label">Starting fret</span>
+            <div className="dx-position">
+              <button
+                type="button"
+                className="dx-stepper"
+                onClick={() => changePosition(position - 1)}
+                aria-label="Lower starting fret"
+                disabled={running && autoAdvance}
+              >
+                −
+              </button>
+              <span className="dx-position-value">{displayPosition}</span>
+              <button
+                type="button"
+                className="dx-stepper"
+                onClick={() => changePosition(position + 1)}
+                aria-label="Raise starting fret"
+                disabled={running && autoAdvance}
+              >
+                +
+              </button>
             </div>
-            <div className="dx-patterns" role="radiogroup" aria-label="Sequence pattern">
-              <div className="dx-pattern-category">
-                {SEQUENCE_PATTERNS.map((p) => (
+            <input
+              type="range"
+              className="dx-slider"
+              min={MIN_FRET}
+              max={MAX_FRET}
+              value={position}
+              aria-label="Starting fret"
+              onChange={(e) => changePosition(Number(e.target.value))}
+            />
+          </div>
+
+          <div className="dx-setting">
+            <span className="tool-control-label">Tempo</span>
+            <div className="dx-tempo-readout">
+              <span className="dx-tempo-value">{bpm}</span>
+              <span className="dx-tempo-unit">BPM</span>
+            </div>
+            <div className="dx-steppers">
+              <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm - 5)}>
+                −5
+              </button>
+              <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm - 1)}>
+                −1
+              </button>
+              <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm + 1)}>
+                +1
+              </button>
+              <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm + 5)}>
+                +5
+              </button>
+            </div>
+            <input
+              type="range"
+              className="dx-slider"
+              min={MIN_BPM}
+              max={MAX_BPM}
+              value={bpm}
+              aria-label="Tempo in beats per minute"
+              onChange={(e) => changeBpm(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <details className="dx-more">
+          <summary className="dx-more-summary">Feel &amp; motion</summary>
+          <div className="dx-settings-row">
+            <div className="dx-setting">
+              <span className="tool-control-label">Rhythm</span>
+              <select
+                className="dx-select"
+                value={rhythmId}
+                aria-label="Rhythm pattern"
+                onChange={(e) => setRhythmId(e.target.value as RhythmId)}
+              >
+                {RHYTHMS.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+              <span className="dx-rhythm-desc">{rhythm.description}</span>
+            </div>
+
+            <div className="dx-setting">
+              <span className="tool-control-label">Accent every N notes</span>
+              <div className="dx-segmented" role="group" aria-label="Accent every N notes">
+                {ACCENT_EVERY_N_OPTIONS.map((n) => (
                   <button
-                    key={p.id}
+                    key={n}
                     type="button"
-                    role="radio"
-                    aria-checked={p.id === sequenceId}
-                    className={`dx-pattern${p.id === sequenceId ? ' dx-pattern-active' : ''}`}
-                    onClick={() => setSequenceId(p.id)}
+                    className={`dx-segment${n === accentEveryN ? ' dx-segment-active' : ''}`}
+                    aria-pressed={n === accentEveryN}
+                    onClick={() => setAccentEveryN(n)}
                   >
-                    <span className="dx-pattern-name">{p.name}</span>
-                    <span className="dx-pattern-desc">{p.description}</span>
+                    {ACCENT_LABELS[n] ?? String(n)}
+                  </button>
+                ))}
+              </div>
+              <span className="dx-rhythm-desc">
+                {accentEveryN === 0
+                  ? 'Natural pulse — first note of each beat accented.'
+                  : `Accents every ${accentEveryN} notes for a displacement drill.`}
+              </span>
+            </div>
+
+            <div className="dx-setting">
+              <span className="tool-control-label">Direction</span>
+              <div className="dx-segmented" role="group" aria-label="Playback direction">
+                {DIRECTIONS.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`dx-segment${d === direction ? ' dx-segment-active' : ''}`}
+                    aria-pressed={d === direction}
+                    onClick={() => setDirection(d)}
+                  >
+                    {DIRECTION_LABELS[d]}
                   </button>
                 ))}
               </div>
             </div>
-          </div>
-        )}
 
-        {mode === 'arpeggio' && (
-          <div className="tool-control-group dx-scale-group">
-            <span className="tool-control-label">Arpeggio</span>
-            <div className="dx-scale-fields">
-              <label className="dx-scale-field">
-                <span className="tool-control-label">Root</span>
-                <select
-                  className="dx-select"
-                  value={arpRootPc}
-                  aria-label="Chord root"
-                  onChange={(e) => setArpRootPc(Number(e.target.value) as PitchClass)}
-                >
-                  {ROOT_PCS.map((pc) => (
-                    <option key={pc} value={pc}>
-                      {pcToName(pc)}
-                    </option>
-                  ))}
-                </select>
+            <div className="dx-setting">
+              <span className="tool-control-label">Auto-advance position</span>
+              <label className="dx-toggle">
+                <input
+                  type="checkbox"
+                  checked={autoAdvance}
+                  onChange={(e) => setAutoAdvance(e.target.checked)}
+                />
+                <span>Move up one fret each loop</span>
               </label>
-              <label className="dx-scale-field">
-                <span className="tool-control-label">Quality</span>
-                <select
-                  className="dx-select"
-                  value={arpQualityId}
-                  aria-label="Chord quality"
-                  onChange={(e) => setArpQualityId(e.target.value)}
-                >
-                  {arpQualityGroups.map((group) => (
-                    <optgroup key={group.label} label={group.label}>
-                      {group.qualities.map((q) => (
-                        <option key={q.id} value={q.id}>
-                          {q.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-              <label className="dx-scale-field">
-                <span className="tool-control-label">Inversion</span>
-                <select
-                  className="dx-select"
-                  value={arpInversion}
-                  aria-label="Chord inversion"
-                  onChange={(e) => setArpInversion(e.target.value as Inversion)}
-                >
-                  {availableInversions.map((inv) => (
-                    <option key={inv.id} value={inv.id}>
-                      {inv.name}
-                    </option>
-                  ))}
-                </select>
+              <div className={`dx-range${autoAdvance ? '' : ' dx-range-off'}`}>
+                <label className="dx-range-field">
+                  <span>From</span>
+                  <input
+                    type="number"
+                    min={MIN_FRET}
+                    max={MAX_FRET}
+                    value={advanceMin}
+                    disabled={!autoAdvance}
+                    onChange={(e) => setAdvanceMin(clampFret(Number(e.target.value)))}
+                  />
+                </label>
+                <label className="dx-range-field">
+                  <span>To</span>
+                  <input
+                    type="number"
+                    min={MIN_FRET}
+                    max={MAX_FRET}
+                    value={advanceMax}
+                    disabled={!autoAdvance}
+                    onChange={(e) => setAdvanceMax(clampFret(Number(e.target.value)))}
+                  />
+                </label>
+              </div>
+              <label className="dx-toggle">
+                <input type="checkbox" checked={clickOn} onChange={(e) => setClickOn(e.target.checked)} />
+                <span>Metronome click</span>
               </label>
             </div>
           </div>
-        )}
-
-        <div className="tool-control-group">
-          <span className="tool-control-label">Instrument</span>
-          <InstrumentPicker
-            value={tuning}
-            onChange={(t) => instrument.setTuningId(t.id)}
-            className="dx-instrument"
-          />
-        </div>
-
-        <div className="tool-control-group">
-          <span className="tool-control-label">Starting fret</span>
-          <div className="dx-position">
-            <button
-              type="button"
-              className="dx-stepper"
-              onClick={() => changePosition(position - 1)}
-              aria-label="Lower starting fret"
-              disabled={running && autoAdvance}
-            >
-              −
-            </button>
-            <span className="dx-position-value">{displayPosition}</span>
-            <button
-              type="button"
-              className="dx-stepper"
-              onClick={() => changePosition(position + 1)}
-              aria-label="Raise starting fret"
-              disabled={running && autoAdvance}
-            >
-              +
-            </button>
-          </div>
-          <input
-            type="range"
-            className="dx-slider"
-            min={MIN_FRET}
-            max={MAX_FRET}
-            value={position}
-            aria-label="Starting fret"
-            onChange={(e) => changePosition(Number(e.target.value))}
-          />
-        </div>
-
-        <div className="tool-control-group">
-          <span className="tool-control-label">Rhythm</span>
-          <select
-            className="dx-select"
-            value={rhythmId}
-            aria-label="Rhythm pattern"
-            onChange={(e) => setRhythmId(e.target.value as RhythmId)}
-          >
-            {RHYTHMS.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-          <span className="dx-rhythm-desc">{rhythm.description}</span>
-        </div>
-
-        <div className="tool-control-group">
-          <span className="tool-control-label">Accent every N notes</span>
-          <div className="dx-segmented" role="group" aria-label="Accent every N notes">
-            {ACCENT_EVERY_N_OPTIONS.map((n) => (
-              <button
-                key={n}
-                type="button"
-                className={`dx-segment${n === accentEveryN ? ' dx-segment-active' : ''}`}
-                aria-pressed={n === accentEveryN}
-                onClick={() => setAccentEveryN(n)}
-              >
-                {ACCENT_LABELS[n] ?? String(n)}
-              </button>
-            ))}
-          </div>
-          <span className="dx-rhythm-desc">
-            {accentEveryN === 0
-              ? 'Natural pulse — first note of each beat accented.'
-              : `Accents every ${accentEveryN} notes for a displacement drill.`}
-          </span>
-        </div>
-
-        <div className="tool-control-group">
-          <span className="tool-control-label">Direction</span>
-          <div className="dx-segmented" role="group" aria-label="Playback direction">
-            {DIRECTIONS.map((d) => (
-              <button
-                key={d}
-                type="button"
-                className={`dx-segment${d === direction ? ' dx-segment-active' : ''}`}
-                aria-pressed={d === direction}
-                onClick={() => setDirection(d)}
-              >
-                {DIRECTION_LABELS[d]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="tool-control-group dx-tempo-group">
-          <span className="tool-control-label">Tempo</span>
-          <div className="dx-tempo-readout">
-            <span className="dx-tempo-value">{bpm}</span>
-            <span className="dx-tempo-unit">BPM</span>
-          </div>
-          <div className="dx-steppers">
-            <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm - 5)}>
-              −5
-            </button>
-            <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm - 1)}>
-              −1
-            </button>
-            <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm + 1)}>
-              +1
-            </button>
-            <button type="button" className="dx-stepper" onClick={() => changeBpm(bpm + 5)}>
-              +5
-            </button>
-          </div>
-          <input
-            type="range"
-            className="dx-slider"
-            min={MIN_BPM}
-            max={MAX_BPM}
-            value={bpm}
-            aria-label="Tempo in beats per minute"
-            onChange={(e) => changeBpm(Number(e.target.value))}
-          />
-        </div>
-
-        <div className="tool-control-group dx-advance-group">
-          <span className="tool-control-label">Auto-advance position</span>
-          <label className="dx-toggle">
-            <input
-              type="checkbox"
-              checked={autoAdvance}
-              onChange={(e) => setAutoAdvance(e.target.checked)}
-            />
-            <span>Move up one fret each loop</span>
-          </label>
-          <div className={`dx-range${autoAdvance ? '' : ' dx-range-off'}`}>
-            <label className="dx-range-field">
-              <span>From</span>
-              <input
-                type="number"
-                min={MIN_FRET}
-                max={MAX_FRET}
-                value={advanceMin}
-                disabled={!autoAdvance}
-                onChange={(e) => setAdvanceMin(clampFret(Number(e.target.value)))}
-              />
-            </label>
-            <label className="dx-range-field">
-              <span>To</span>
-              <input
-                type="number"
-                min={MIN_FRET}
-                max={MAX_FRET}
-                value={advanceMax}
-                disabled={!autoAdvance}
-                onChange={(e) => setAdvanceMax(clampFret(Number(e.target.value)))}
-              />
-            </label>
-          </div>
-          <label className="dx-toggle">
-            <input type="checkbox" checked={clickOn} onChange={(e) => setClickOn(e.target.checked)} />
-            <span>Metronome click</span>
-          </label>
-        </div>
-      </div>
-
-      <div className="dx-board">
-        <Fretboard
-          tuning={tuning}
-          fromFret={fromFret}
-          toFret={toFret}
-          markers={markers}
-          ariaLabel={`${title} on ${tuning.name}`}
-        />
-      </div>
-
-      <div className="dx-strip" role="list" aria-label="Exercise step sequence">
-        {displaySteps.map((step, i) => {
-          const active = running && i === activeStepIndex
-          const accented = displayEvents[i]?.accent ?? false
-          return (
-            <div
-              key={`${i}-${step.string}-${step.fret}`}
-              role="listitem"
-              className={`dx-strip-step${active ? ' dx-strip-active' : ''}${accented ? ' dx-strip-accent' : ''}`}
-            >
-              <span className="dx-strip-order">{i + 1}</span>
-              <span className="dx-strip-finger">{step.finger}</span>
-              <span className="dx-strip-meta">
-                {midiToName(step.midi)} · str {step.string + 1} · fr {step.fret}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="dx-transport">
-        <button
-          type="button"
-          className={`dx-start${running ? ' dx-start-active' : ''}`}
-          onClick={() => (running ? stop() : void start())}
-        >
-          {running ? 'Stop' : 'Start'}
-        </button>
+        </details>
       </div>
     </div>
   )

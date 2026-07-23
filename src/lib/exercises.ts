@@ -44,8 +44,12 @@ export const FINGERS: readonly Finger[] = [1, 2, 3, 4]
 /** How a motif repeats across the instrument's strings. */
 export type Traversal = 'ascending' | 'descending' | 'ascending-descending'
 
-/** Picker grouping for a pattern (spider-walk permutation, string-crossing drill, or position shift). */
-export type PatternCategory = 'spider' | 'crossing' | 'shift'
+/**
+ * Picker grouping for a pattern: spider-walk permutation, string-crossing
+ * drill, position shift, finger roll (same fret across adjacent strings), or
+ * trill/burst (rapid two-finger alternation per string).
+ */
+export type PatternCategory = 'spider' | 'crossing' | 'shift' | 'roll' | 'trill'
 
 /**
  * One note of a repeating motif, relative to the current traversal string and
@@ -518,6 +522,91 @@ export const THREE_NPS_SHIFT: ExercisePattern = {
   category: 'shift',
 }
 
+/**
+ * Finger-roll drills. The same fret is sounded across adjacent strings — a
+ * staple bass technique where the fretting hand "rolls" from string to string
+ * without shifting position. Expressed purely with `stringOffset` (crossing
+ * strings) and a fixed `fret` of 0, so they render on any string count.
+ */
+
+/** One finger (index) rolled across every string at the same fret, up then down. */
+export const ROLL_ONE_FINGER: ExercisePattern = {
+  id: 'roll-one-finger',
+  name: 'Index Roll',
+  description:
+    'Hold one fret and roll the index finger across every string and back — no position shift. Trains the fingertip "rolling" motion bassists use to mute and re-sound adjacent strings cleanly.',
+  motif: [{ fret: 0, finger: 1 }],
+  traversal: 'ascending-descending',
+  category: 'roll',
+}
+
+/** One finger per string at a single fret (1-2-3-4 across four adjacent strings). */
+export const ROLL_PER_STRING: ExercisePattern = {
+  id: 'roll-per-string',
+  name: 'Finger-Per-String Roll',
+  description:
+    'One finger per string on a single fret — index, middle, ring, pinky across four adjacent strings. A same-fret grip drill that builds independence without any stretch.',
+  motif: [
+    { fret: 0, finger: 1 },
+    { fret: 0, finger: 2, stringOffset: 1 },
+    { fret: 0, finger: 3, stringOffset: 2 },
+    { fret: 0, finger: 4, stringOffset: 3 },
+  ],
+  traversal: 'ascending',
+  category: 'roll',
+}
+
+/**
+ * Trill / burst drills. A rapid two-finger alternation (a four-note burst)
+ * repeated on each string before moving up — index paired with middle, ring,
+ * or pinky (a half-step, whole-step, or minor-third apart). Builds hammer-on /
+ * pull-off speed and finger endurance.
+ */
+
+/** Build a trill burst pattern for the index finger paired with a higher finger. */
+function trillPattern(id: string, name: string, description: string, finger: Finger, fret: number): ExercisePattern {
+  return {
+    id,
+    name,
+    description,
+    motif: [
+      { fret: 0, finger: 1 },
+      { fret, finger },
+      { fret: 0, finger: 1 },
+      { fret, finger },
+    ],
+    traversal: 'ascending',
+    category: 'trill',
+  }
+}
+
+/** Trill 1-2 (half step): rapid index/middle alternation, walked up the strings. */
+export const TRILL_12: ExercisePattern = trillPattern(
+  'trill-12',
+  'Trill 1-2 (half step)',
+  'A rapid index-middle burst on each string, climbing string by string. The half-step span keeps the hand compact while drilling alternation speed.',
+  2,
+  1,
+)
+
+/** Trill 1-3 (whole step): index/ring alternation. */
+export const TRILL_13: ExercisePattern = trillPattern(
+  'trill-13',
+  'Trill 1-3 (whole step)',
+  'Index-ring bursts across the strings a whole step apart — the classic trill span. Trains the weaker ring finger to fire fast and evenly.',
+  3,
+  2,
+)
+
+/** Trill 1-4 (minor third): index/pinky alternation — the widest, most demanding. */
+export const TRILL_14: ExercisePattern = trillPattern(
+  'trill-14',
+  'Trill 1-4 (minor third)',
+  'Index-pinky bursts a minor third apart. The widest, most demanding trill — builds pinky strength and independence under speed.',
+  4,
+  3,
+)
+
 /** All shipped patterns, in picker order (grouped by category). */
 export const BUILTIN_PATTERNS: readonly ExercisePattern[] = [
   SPIDER_1234_UPDOWN,
@@ -531,6 +620,11 @@ export const BUILTIN_PATTERNS: readonly ExercisePattern[] = [
   CHROMATIC_POSITION_SHIFT,
   POSITION_SHIFT_1234,
   THREE_NPS_SHIFT,
+  ROLL_ONE_FINGER,
+  ROLL_PER_STRING,
+  TRILL_12,
+  TRILL_13,
+  TRILL_14,
 ]
 
 /** Picker group labels, in display order. */
@@ -538,6 +632,8 @@ export const PATTERN_CATEGORY_LABELS: Record<PatternCategory, string> = {
   spider: 'Spider walks',
   crossing: 'String crossing',
   shift: 'Position shifts',
+  roll: 'Finger rolls',
+  trill: 'Trills & bursts',
 }
 
 /** Builtin patterns grouped by category, in `PATTERN_CATEGORY_LABELS` order. */
