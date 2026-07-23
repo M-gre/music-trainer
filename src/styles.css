@@ -3544,3 +3544,58 @@ a.tool-card:hover {
   font-size: 0.85rem;
   color: var(--text-dim);
 }
+
+/* Play-Along: chord-tones-on-fretboard panel. */
+.pa-tones-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pa-tones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.pa-tones-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pa-tones-title {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.pa-tones-title strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.pa-tones-next {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pa-tones-picker {
+  margin: 0;
+}
+
+.pa-tones-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-align: left;
+}
