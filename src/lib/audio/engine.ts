@@ -21,6 +21,7 @@
  */
 
 import { midiToFreq, type Midi } from '../theory/notes.ts'
+import { DrumKit, type DrumVoice, type PlayDrumOptions } from './drums.ts'
 import {
   clamp01,
   computeEnvelope,
@@ -181,6 +182,7 @@ export class AudioEngine {
   private ctx: MinimalAudioContext | null = null
   private master: GainNodeLike | null = null
   private volume = DEFAULT_MASTER_VOLUME
+  private drumKit: DrumKit | null = null
 
   constructor(private readonly createContext: AudioContextFactory = defaultContextFactory) {}
 
@@ -395,6 +397,24 @@ export class AudioEngine {
   /** Play several notes at once with shared options. */
   playChord(midis: readonly Midi[], duration: number, opts: PlayNoteOptions = {}): void {
     for (const midi of midis) this.playNote(midi, duration, opts)
+  }
+
+  /**
+   * Play a synthesized drum voice (kick, snare, hats, ride) through the shared
+   * master chain. The kit is created lazily on first use and shares the engine's
+   * context + master input, so drums pass through the same volume + limiter as
+   * every other sound. Scheduling is `when`-relative for the groove engine, and
+   * hi-hat choke groups are handled inside the kit.
+   */
+  playDrum(voice: DrumVoice, opts: PlayDrumOptions = {}): void {
+    this.init()
+    if (!this.drumKit) {
+      this.drumKit = new DrumKit(() => {
+        const { ctx, master } = this.init()
+        return { context: ctx, destination: master }
+      })
+    }
+    this.drumKit.playDrum(voice, opts)
   }
 }
 
