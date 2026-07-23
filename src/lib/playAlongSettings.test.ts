@@ -66,6 +66,7 @@ describe('normalizePlayAlongSettings', () => {
       accompaniment: {
         enabled: true,
         rootPc: 5,
+        keyMode: 'minor',
         progressionId: 'ii-V-I',
         customDegrees: '1-4-5',
         barsPerChord: 2,
@@ -185,7 +186,7 @@ describe('play-along settings store', () => {
     })
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(5)
+    expect(raw && JSON.parse(raw).v).toBe(6)
   })
 
   it('migrates v2 data (no showChordTones) by filling in the default', () => {
@@ -216,13 +217,15 @@ describe('play-along settings store', () => {
     // Existing prefs survive; the new toggle takes its default.
     expect(migrated.grooveId).toBe('bossa')
     expect(migrated.accompaniment.rootPc).toBe(2)
+    // Pre-keyMode data upgrades to a major key, so the progression is unchanged.
+    expect(migrated.accompaniment.keyMode).toBe('major')
     expect(migrated.showChordTones).toBe(DEFAULT_PLAY_ALONG_SETTINGS.showChordTones)
     expect(migrated.tempoTrainer).toEqual(DEFAULT_TEMPO_TRAINER)
     expect(migrated.drumVolume).toBe(DEFAULT_DRUM_VOLUME)
     expect(migrated.accompanimentVolume).toBe(DEFAULT_ACCOMPANIMENT_VOLUME)
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(5)
+    expect(raw && JSON.parse(raw).v).toBe(6)
   })
 
   it('migrates v3 data (no tempoTrainer) by filling in the default', () => {
@@ -253,7 +256,7 @@ describe('play-along settings store', () => {
     expect(migrated.accompanimentVolume).toBe(DEFAULT_ACCOMPANIMENT_VOLUME)
     // The upgrade is persisted at the new version so it only runs once.
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(5)
+    expect(raw && JSON.parse(raw).v).toBe(6)
   })
 
   it('migrates v4 data (no mix volumes) by filling in the defaults', () => {
@@ -281,7 +284,7 @@ describe('play-along settings store', () => {
     expect(migrated.drumVolume).toBe(DEFAULT_DRUM_VOLUME)
     expect(migrated.accompanimentVolume).toBe(DEFAULT_ACCOMPANIMENT_VOLUME)
     const raw = backend.getItem('mt:settings:play-along')
-    expect(raw && JSON.parse(raw).v).toBe(5)
+    expect(raw && JSON.parse(raw).v).toBe(6)
   })
 
   it('normalizes corrupt persisted data back to defaults on read', () => {

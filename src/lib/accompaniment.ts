@@ -20,7 +20,12 @@
 
 import type { VoiceName } from './audio/voices.ts'
 import { VOICING_BASE_MIDI } from './chordExplorer.ts'
-import { buildDiatonicChordCards, nearestVoicing } from './diatonicChords.ts'
+import {
+  buildDiatonicChordCards,
+  isDiatonicScaleId,
+  nearestVoicing,
+  type DiatonicScaleId,
+} from './diatonicChords.ts'
 import type { GridPosition } from './audio/scheduler.ts'
 import { getChordQuality, type ChordQuality } from './theory/chords.ts'
 import { mod12, pcToName, type Midi, type PitchClass } from './theory/notes.ts'
@@ -89,6 +94,13 @@ export interface ProgressionPreset {
   name: string
   /** Roman-numeral layout, e.g. "I · V · vi · IV". */
   label: string
+  /**
+   * The key mode this preset is written for. The picker only shows presets
+   * matching the selected mode; the degrees still resolve against whatever mode
+   * is active (so numerals/qualities follow the mode), but each preset's
+   * numerals only read correctly under its own mode.
+   */
+  mode: DiatonicScaleId
   specs: DegreeSpec[]
   /** When set, bars-per-chord is fixed to this (the 12-bar blues form = 1). */
   fixedBarsPerChord?: number
@@ -106,22 +118,68 @@ function bluesSpecs(): DegreeSpec[] {
   return [1, 1, 1, 1, 4, 4, 1, 1, 5, 4, 1, 1].map((degree) => ({ degree, qualityId: 'dom7' }))
 }
 
+/**
+ * 12-bar minor blues, natural-minor form:
+ *   i · iv · i · i / iv · iv · i · i / VI · V⁷ · i · V⁷
+ * i, iv and VI take their natural-minor triad qualities (minor, minor, major);
+ * the two turnaround Vs are forced dominant (`dom7`) — the leading-tone pull a
+ * blues wants, which natural minor's plain minor v would lack.
+ */
+function minorBluesSpecs(): DegreeSpec[] {
+  return [
+    { degree: 1 },
+    { degree: 4 },
+    { degree: 1 },
+    { degree: 1 },
+    { degree: 4 },
+    { degree: 4 },
+    { degree: 1 },
+    { degree: 1 },
+    { degree: 6 },
+    { degree: 5, qualityId: 'dom7' },
+    { degree: 1 },
+    { degree: 5, qualityId: 'dom7' },
+  ]
+}
+
 export const PROGRESSION_PRESETS: readonly ProgressionPreset[] = [
-  { id: 'I-V-vi-IV', name: 'I–V–vi–IV', label: 'I · V · vi · IV', specs: degs([1, 5, 6, 4]) },
-  { id: 'ii-V-I', name: 'ii–V–I', label: 'ii · V · I', specs: degs([2, 5, 1]) },
-  { id: 'I-IV-V-I', name: 'I–IV–V–I', label: 'I · IV · V · I', specs: degs([1, 4, 5, 1]) },
-  { id: 'vi-IV-I-V', name: 'vi–IV–I–V', label: 'vi · IV · I · V', specs: degs([6, 4, 1, 5]) },
+  // Major-key presets.
+  { id: 'I-V-vi-IV', name: 'I–V–vi–IV', label: 'I · V · vi · IV', mode: 'major', specs: degs([1, 5, 6, 4]) },
+  { id: 'ii-V-I', name: 'ii–V–I', label: 'ii · V · I', mode: 'major', specs: degs([2, 5, 1]) },
+  { id: 'I-IV-V-I', name: 'I–IV–V–I', label: 'I · IV · V · I', mode: 'major', specs: degs([1, 4, 5, 1]) },
+  { id: 'vi-IV-I-V', name: 'vi–IV–I–V', label: 'vi · IV · I · V', mode: 'major', specs: degs([6, 4, 1, 5]) },
   {
     id: 'blues-12',
     name: '12-Bar Blues',
     label: 'I⁷ · IV⁷ · V⁷ (12-bar)',
+    mode: 'major',
     specs: bluesSpecs(),
     fixedBarsPerChord: 1,
   },
+  // Natural-minor presets. Numerals reflect the natural-minor qualities:
+  // i (minor), III/VI/VII (major), iv/v (minor), ii° (dim).
+  { id: 'i-VI-III-VII', name: 'i–VI–III–VII', label: 'i · VI · III · VII', mode: 'minor', specs: degs([1, 6, 3, 7]) },
+  { id: 'i-iv-v', name: 'i–iv–v', label: 'i · iv · v', mode: 'minor', specs: degs([1, 4, 5]) },
+  {
+    id: 'minor-blues-12',
+    name: '12-Bar Minor Blues',
+    label: 'i · iv · V⁷ (12-bar min)',
+    mode: 'minor',
+    specs: minorBluesSpecs(),
+    fixedBarsPerChord: 1,
+  },
+  // Harmonic-minor preset: raising the 7th makes V a major (dominant) triad, so
+  // i–iv–V gives the strong dominant cadence natural minor cannot.
+  { id: 'i-iv-V', name: 'i–iv–V', label: 'i · iv · V', mode: 'harmonic-minor', specs: degs([1, 4, 5]) },
 ]
 
 export function getProgressionPreset(id: string): ProgressionPreset | undefined {
   return PROGRESSION_PRESETS.find((p) => p.id === id)
+}
+
+/** The presets written for a given key mode, in declaration order. */
+export function progressionPresetsForMode(mode: DiatonicScaleId): ProgressionPreset[] {
+  return PROGRESSION_PRESETS.filter((p) => p.mode === mode)
 }
 
 /** Whether a string names a shipped preset or the custom progression. */
@@ -144,17 +202,21 @@ export interface AccompChord {
 }
 
 /**
- * Resolve degree specs against a major key (root pitch class) to concrete,
- * key-spelled chords. Diatonic slots take the key's own triad quality; a slot
- * with a `qualityId` override (blues dom7) keeps the diatonic root letter but
- * swaps in that quality's symbol suffix. Reuses the tested diatonic-chord
- * spelling so enharmonics stay correct.
+ * Resolve degree specs against a key (root pitch class + mode) to concrete,
+ * key-spelled chords. Diatonic slots take the mode's own triad quality (so a i
+ * in minor is a minor triad, ii° diminished, the harmonic-minor V major, …); a
+ * slot with a `qualityId` override (blues dom7) keeps the diatonic root letter
+ * but swaps in that quality's symbol suffix. Reuses the tested diatonic-chord
+ * spelling — which spells each mode via consecutive scale letters (a minor key
+ * therefore reads with its relative major's signature) — so enharmonics stay
+ * correct. `mode` defaults to `'major'` for backward compatibility.
  */
 export function resolveProgressionChords(
   rootPc: PitchClass,
   specs: readonly DegreeSpec[],
+  mode: DiatonicScaleId = 'major',
 ): AccompChord[] {
-  const cards = buildDiatonicChordCards(mod12(rootPc), 'major')
+  const cards = buildDiatonicChordCards(mod12(rootPc), mode)
   return specs.map((spec) => {
     const card = cards[spec.degree - 1]
     if (!card) throw new Error(`Invalid scale degree: ${spec.degree}`)
@@ -514,6 +576,11 @@ export interface AccompanimentSettings {
   enabled: boolean
   /** Key root pitch class, 0–11 (0 = C). */
   rootPc: PitchClass
+  /**
+   * Key mode: `'major'`, natural `'minor'`, or `'harmonic-minor'`. Degrees
+   * resolve to this mode's diatonic qualities and spelling.
+   */
+  keyMode: DiatonicScaleId
   /** Preset id (see `PROGRESSION_PRESETS`) or `CUSTOM_PROGRESSION_ID`. */
   progressionId: string
   /** Raw text for the custom degree input (parsed when `progressionId` is custom). */
@@ -528,6 +595,7 @@ export const DEFAULT_CUSTOM_DEGREES = '1-6-4-5'
 export const DEFAULT_ACCOMPANIMENT_SETTINGS: AccompanimentSettings = {
   enabled: false,
   rootPc: 0,
+  keyMode: 'major',
   progressionId: 'I-V-vi-IV',
   customDegrees: DEFAULT_CUSTOM_DEGREES,
   barsPerChord: 1,
@@ -546,6 +614,7 @@ export function normalizeAccompanimentSettings(value: unknown): AccompanimentSet
       typeof v.rootPc === 'number' && Number.isFinite(v.rootPc)
         ? mod12(Math.round(v.rootPc))
         : d.rootPc,
+    keyMode: isDiatonicScaleId(v.keyMode) ? v.keyMode : d.keyMode,
     progressionId: isProgressionId(v.progressionId) ? v.progressionId : d.progressionId,
     customDegrees: typeof v.customDegrees === 'string' ? v.customDegrees : d.customDegrees,
     barsPerChord:
@@ -605,7 +674,7 @@ export function resolveAccompaniment(
     }
   }
 
-  const chords = resolveProgressionChords(settings.rootPc, specs)
+  const chords = resolveProgressionChords(settings.rootPc, specs, settings.keyMode)
   const voicings = voiceLeadProgression(chords, baseMidi)
   return {
     chords,

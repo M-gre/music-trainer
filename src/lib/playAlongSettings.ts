@@ -169,12 +169,13 @@ export function createPlayAlongSettingsStore(backend?: StorageBackend): Store<Pl
       // v2 added the chord-progression accompaniment block; v3 added the
       // `showChordTones` fretboard-panel toggle; v4 added the `tempoTrainer`
       // auto-increase config; v5 added the `drumVolume` / `accompanimentVolume`
-      // mix levels.
-      version: 5,
+      // mix levels; v6 added the accompaniment `keyMode` (major/minor/harmonic
+      // minor) — old data defaults to 'major', so progressions are unchanged.
+      version: 6,
       defaultValue: DEFAULT_PLAY_ALONG_SETTINGS,
       // Older data lacks the newer fields; normalizing fills them (and every
-      // other field) from the defaults, so a v1/v2/v3/v4 -> v5 upgrade never
-      // loses existing drum or accompaniment prefs.
+      // other field) from the defaults, so a v1..v5 -> v6 upgrade never loses
+      // existing drum or accompaniment prefs.
       migrate: (oldData) => normalizePlayAlongSettings(oldData),
     },
     backend,

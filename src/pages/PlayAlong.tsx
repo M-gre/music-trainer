@@ -19,7 +19,11 @@ import { Fretboard, type FretboardMarker } from '../components/Fretboard.tsx'
 import { InstrumentPicker } from '../components/InstrumentPicker.tsx'
 import { useInstrumentSettings } from '../hooks/useInstrumentSettings.ts'
 import { buildChordToneMarkers } from '../lib/chordTones.ts'
-import { prefersFlats } from '../lib/theory/spell.ts'
+import {
+  DIATONIC_SCALE_OPTIONS,
+  keyPrefersFlats,
+  type DiatonicScaleId,
+} from '../lib/diatonicChords.ts'
 import {
   DRUM_VOICES,
   getAudioEngine,
@@ -41,7 +45,8 @@ import {
   keyOptions,
   MAX_BARS_PER_CHORD,
   MIN_BARS_PER_CHORD,
-  PROGRESSION_PRESETS,
+  getProgressionPreset,
+  progressionPresetsForMode,
   resolveAccompaniment,
   type ChordCompConfig,
   type CompStyle,
@@ -107,6 +112,7 @@ export function PlayAlong() {
   // Accompaniment (chord-progression) state.
   const [accEnabled, setAccEnabled] = useState(settings.accompaniment.enabled)
   const [accRootPc, setAccRootPc] = useState(settings.accompaniment.rootPc)
+  const [accKeyMode, setAccKeyMode] = useState<DiatonicScaleId>(settings.accompaniment.keyMode)
   const [accProgId, setAccProgId] = useState(settings.accompaniment.progressionId)
   const [accCustom, setAccCustom] = useState(settings.accompaniment.customDegrees)
   const [accBarsPerChord, setAccBarsPerChord] = useState(settings.accompaniment.barsPerChord)
@@ -136,12 +142,13 @@ export function PlayAlong() {
       resolveAccompaniment({
         enabled: accEnabled,
         rootPc: accRootPc,
+        keyMode: accKeyMode,
         progressionId: accProgId,
         customDegrees: accCustom,
         barsPerChord: accBarsPerChord,
         style: accStyle,
       }),
-    [accEnabled, accRootPc, accProgId, accCustom, accBarsPerChord, accStyle],
+    [accEnabled, accRootPc, accKeyMode, accProgId, accCustom, accBarsPerChord, accStyle],
   )
   const resolvedRef = useRef(resolved)
   resolvedRef.current = resolved
@@ -197,6 +204,7 @@ export function PlayAlong() {
       accompaniment: {
         enabled: accEnabled,
         rootPc: accRootPc,
+        keyMode: accKeyMode,
         progressionId: accProgId,
         customDegrees: accCustom,
         barsPerChord: accBarsPerChord,
@@ -221,6 +229,7 @@ export function PlayAlong() {
     muted,
     accEnabled,
     accRootPc,
+    accKeyMode,
     accProgId,
     accCustom,
     accBarsPerChord,
@@ -391,6 +400,20 @@ export function PlayAlong() {
     setMuted((prev) => (prev.includes(voice) ? prev.filter((v) => v !== voice) : [...prev, voice]))
   }, [])
 
+  // Switch key mode. A custom progression keeps its degrees (they re-resolve to
+  // the new mode); a preset that doesn't belong to the new mode falls back to
+  // that mode's first preset so the picker never shows an out-of-mode selection.
+  const changeKeyMode = useCallback((mode: DiatonicScaleId) => {
+    setAccKeyMode(mode)
+    setAccProgId((prev) => {
+      if (prev === CUSTOM_PROGRESSION_ID) return prev
+      if (getProgressionPreset(prev)?.mode === mode) return prev
+      return progressionPresetsForMode(mode)[0]?.id ?? prev
+    })
+  }, [])
+
+  const modePresets = progressionPresetsForMode(accKeyMode)
+
   const beats = Array.from({ length: beatCount }, (_, i) => i)
   const volumePercent = Math.round(masterVolume * 100)
   const drumVolumePercent = Math.round(drumVolume * 100)
@@ -398,7 +421,7 @@ export function PlayAlong() {
 
   // Chord-tones panel: the current chord (index 0 when stopped, so the upcoming
   // first chord is shown) mapped to fretboard markers on the global tuning.
-  const tonePrefer = prefersFlats(accRootPc) ? 'flat' : 'sharp'
+  const tonePrefer = keyPrefersFlats(accRootPc, accKeyMode) ? 'flat' : 'sharp'
   const currentChordIdx = activeChordIndex ?? 0
   const currentChord = resolved.chords[currentChordIdx] ?? resolved.chords[0]
   const nextChord =
@@ -823,12 +846,28 @@ export function PlayAlong() {
                 </button>
               ))}
             </div>
+            <span className="tool-control-label pa-mode-label">Mode</span>
+            <div className="pa-seg pa-mode-seg" role="radiogroup" aria-label="Key mode">
+              {DIATONIC_SCALE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={opt.id === accKeyMode}
+                  aria-label={`${opt.name} key`}
+                  className={`pa-seg-btn${opt.id === accKeyMode ? ' pa-seg-btn-active' : ''}`}
+                  onClick={() => changeKeyMode(opt.id)}
+                >
+                  {opt.name}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="tool-control-group pa-prog-group">
             <span className="tool-control-label">Progression</span>
             <div className="pa-chips" role="radiogroup" aria-label="Progression preset">
-              {PROGRESSION_PRESETS.map((preset) => (
+              {modePresets.map((preset) => (
                 <button
                   key={preset.id}
                   type="button"
